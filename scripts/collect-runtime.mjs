@@ -6,7 +6,7 @@
  * 用法：node scripts/collect-runtime.mjs
  * 前置：
  *   - ../harmonypc-electron 与本工程同级目录（HarmonyPC Electron 工程）
- *   - 原生 SO 库已就位：从华为仓库下载的 v34.8.5 产物（zip → libelectron_132.tar.gz）解压后，
+ *   - 原生 SO 库已就位：从华为仓库下载的 v37.2.3 产物（zip → libelectron_138.tar.gz）解压后，
  *     其 ohos_hap/electron/libs/arm64-v8a/ 下有 libelectron.so / libadapter.so / libffmpeg.so，
  *     需先放置到 ../harmonypc-electron/ohos_hap/electron/libs/（仓库默认不含 SO，需下载解压补齐）。
  */
@@ -45,7 +45,7 @@ const requiredSo = ['libelectron.so', 'libadapter.so', 'libffmpeg.so'];
 const missing = requiredSo.filter((n) => !existsSync(resolve(soDir, n)));
 if (missing.length > 0) {
   console.error(`[collect-runtime] 缺失原生 SO 库: ${missing.join(', ')}`);
-  console.error('  请将下载的 Electron 编译产物（v34.8.5-20260729.1-release.zip → libelectron_132.tar.gz）');
+  console.error('  请将下载的 Electron 编译产物（v37.2.3-20260825.1-release.zip → libelectron_138.tar.gz）');
   console.error(`  解压后把 ohos_hap/electron/libs/arm64-v8a/ 下的 .so 放到: ${soDir}`);
   process.exit(1);
 }
