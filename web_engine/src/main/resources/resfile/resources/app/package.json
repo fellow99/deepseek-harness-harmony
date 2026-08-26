@@ -1,0 +1,6 @@
+{
+  "name": "deepseek-harness-harmony",
+  "version": "1.0.0",
+  "description": "DeepSeek Harness HarmonyOS desktop",
+  "main": "main.js"
+}

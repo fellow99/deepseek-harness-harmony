@@ -12,3 +12,9 @@
 /.appanalyzer
 /.omo
 /.codegraph
+
+# dsh 构建产物与运行时二进制（构建期生成 / 从 sibling 工程 copy，不入库）
+/dsh-dist/
+dsh-dist.tar.gz
+*.so
+/electron/libs/

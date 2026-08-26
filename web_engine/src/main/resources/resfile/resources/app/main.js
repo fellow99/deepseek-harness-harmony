@@ -1,0 +1,360 @@
+/**
+ * DeepSeek Harness 鸿蒙版 — Electron 主进程（Electron-on-鸿蒙 运行时）
+ *
+ * 与 deepseek-harness-desktop 的 main 进程（host.ts + index.ts）等价，但为 CommonJS 入口
+ * （鸿蒙 Electron 示例用 require('electron')），dsh 的 ESM 产物经动态 import 加载。
+ *
+ * 部署形态：dsh 部署产物（dsh-dist/）先压缩为 dsh-dist.tar.gz 打入 resfile（避免 HAP 内
+ * 5 万+ 小文件导致打包过慢/超限），首次启动解压到 userData/dsh-dist 后加载。
+ */
+'use strict';
+const { app, BrowserWindow } = require('electron');
+const {
+  cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync,
+  writeSync, openSync, closeSync, createReadStream,
+} = require('node:fs');
+const { createGunzip } = require('node:zlib');
+const { join, dirname } = require('node:path');
+const { pathToFileURL } = require('node:url');
+const { networkInterfaces } = require('node:os');
+
+// ── dsh 部署产物路径 ─────────────────────────────────────────────────
+const DSH_ARCHIVE = join(__dirname, 'dsh-dist.tar.gz');
+let DSH_ROOT = null;
+
+function getDshRoot() {
+  return join(app.getPath('userData'), 'dsh-dist');
+}
+
+/**
+ * 极简 ustar 流式解压（bsdtar --format=ustar，无符号链接、无 pax 扩展头，仅文件/目录）。
+ * 用 createGunzip 流式解压，逐条目落盘，避免把 555MB 产物一次性载入内存（移动设备 OOM）。
+ */
+function extractTarGz(archivePath, destBase) {
+  return new Promise((resolve, reject) => {
+    const gunzip = createGunzip();
+    const input = createReadStream(archivePath);
+    let buf = Buffer.alloc(0);
+    let offset = 0;
+    let count = 0;
+    let ended = false;
+
+    const process = () => {
+      while (!ended && buf.length - offset >= 512) {
+        const header = buf.subarray(offset, offset + 512);
+        if (header[0] === 0) { ended = true; break; } // 结束块
+        const name = header.subarray(0, 100).toString('utf8').replace(/\0[\s\S]*$/, '');
+        const prefix = header.subarray(345, 500).toString('utf8').replace(/\0[\s\S]*$/, '');
+        const sizeStr = header.subarray(124, 136).toString('utf8').replace(/\0[\s\S]*$/, '').trim();
+        const size = parseInt(sizeStr, 8) || 0;
+        const typeflag = String.fromCharCode(header[156]);
+        let fullName = prefix ? prefix + '/' + name : name;
+        // tar 由 `-C <proj> dsh-dist` 打包，条目带 dsh-dist/ 前缀；解压目标已含该目录，剥掉避免双重前缀
+        fullName = fullName.replace(/^\.\//, '').replace(/^dsh-dist\//, '');
+        const dataStart = offset + 512;
+        const paddedEnd = dataStart + Math.ceil(size / 512) * 512;
+        if (buf.length < paddedEnd) break; // 等更多数据
+        if (fullName && !fullName.endsWith('/')) {
+          const destPath = join(destBase, fullName);
+          if (typeflag === '5') {
+            mkdirSync(destPath, { recursive: true });
+          } else if (typeflag === '0' || typeflag === '\u0000' || typeflag === '') {
+            mkdirSync(dirname(destPath), { recursive: true });
+            const fd = openSync(destPath, 'w');
+            writeSync(fd, buf, dataStart, size);
+            closeSync(fd);
+            count++;
+          }
+        }
+        offset = paddedEnd;
+      }
+      // 压缩缓冲区，释放已处理数据
+      if (offset > 0) {
+        buf = Buffer.from(buf.subarray(offset));
+        offset = 0;
+      }
+    };
+
+    gunzip.on('data', (chunk) => {
+      buf = buf.length === 0 ? chunk : Buffer.concat([buf, chunk]);
+      process();
+    });
+    gunzip.on('end', () => resolve(count));
+    gunzip.on('error', reject);
+    input.on('error', reject);
+    input.pipe(gunzip);
+  });
+}
+
+/** 确保 dsh 产物就位（首次启动解压 tar.gz 到 userData/dsh-dist）。 */
+async function ensureDshExtracted() {
+  DSH_ROOT = getDshRoot();
+  const marker = join(DSH_ROOT, 'node_modules', '@deepseek-ai', 'dsh-app-boot', 'lib', 'index.js');
+  if (existsSync(marker)) {
+    console.log('[dsh-harmony] dsh 产物已就位，跳过解压');
+    return true;
+  }
+  if (!existsSync(DSH_ARCHIVE)) {
+    console.error('[dsh-harmony] dsh-dist.tar.gz 缺失');
+    globalThis.__extractError = 'archive-missing';
+    return false;
+  }
+  console.log('[dsh-harmony] 首次启动，解压 dsh-dist.tar.gz →', DSH_ROOT);
+  try {
+    mkdirSync(DSH_ROOT, { recursive: true });
+    const count = await extractTarGz(DSH_ARCHIVE, DSH_ROOT);
+    console.log('[dsh-harmony] 解压完成，文件数:', count);
+    return true;
+  } catch (err) {
+    console.error('[dsh-harmony] 解压失败:', err);
+    const { inspect } = require('node:util');
+    globalThis.__extractError = inspect(err, { depth: 4, colors: false }).slice(0, 400);
+    return false;
+  }
+}
+
+const DSH_CLI_LIB = () => join(DSH_ROOT, 'lib');
+const DSH_APP_BOOT_LIB = () => join(DSH_ROOT, 'node_modules', '@deepseek-ai', 'dsh-app-boot', 'lib', 'index.js');
+const DESKTOP_PROFILE_SRC = () => join(DSH_ROOT, 'profiles', 'desktop');
+
+/** 在 dsh CLI lib 中定位 profile-boot 薄入口（re-export runProfile）。 */
+function findProfileBootEntry() {
+  try {
+    const candidates = [];
+    for (const file of readdirSync(DSH_CLI_LIB())) {
+      if (!file.startsWith('profile-boot-') || !file.endsWith('.js')) continue;
+      const fullPath = join(DSH_CLI_LIB(), file);
+      const content = readFileSync(fullPath, 'utf8');
+      if (content.includes('export { runProfile') && content.length < 300) {
+        candidates.push({ path: fullPath, mtime: statSync(fullPath).mtimeMs });
+      }
+    }
+    candidates.sort((a, b) => b.mtime - a.mtime);
+    return candidates[0]?.path ?? null;
+  } catch (err) {
+    console.error('[dsh-harmony] findProfileBootEntry 失败:', err);
+    return null;
+  }
+}
+
+/** 将 desktop profile 安装到 $DSH_HOME/profiles/desktop（幂等）。 */
+function ensureDesktopProfile(home) {
+  const src = DESKTOP_PROFILE_SRC();
+  const dest = join(home, 'profiles', 'desktop');
+  const srcPkg = join(src, 'package.json');
+  if (!existsSync(srcPkg)) return;
+  try {
+    mkdirSync(dest, { recursive: true });
+    const destPkg = join(dest, 'package.json');
+    if (!existsSync(destPkg)) { cpSync(src, dest, { recursive: true }); return; }
+    const seed = JSON.parse(readFileSync(srcPkg, 'utf8'));
+    const cur = JSON.parse(readFileSync(destPkg, 'utf8'));
+    let changed = false;
+    cur.dependencies ??= {};
+    for (const [name, spec] of Object.entries(seed.dependencies ?? {})) {
+      if (!(name in cur.dependencies)) { cur.dependencies[name] = spec; changed = true; }
+    }
+    cur.dsh ??= {};
+    cur.dsh.profile ??= {};
+    const curBundles = cur.dsh.profile.bundles ?? [];
+    for (const b of seed.dsh?.profile?.bundles ?? []) {
+      if (!curBundles.includes(b)) { curBundles.push(b); changed = true; }
+    }
+    cur.dsh.profile.bundles = curBundles;
+    if (changed) writeFileSync(destPkg, JSON.stringify(cur, null, 2) + '\n');
+    for (const name of readdirSync(src)) {
+      if (name === 'package.json') continue;
+      const df = join(dest, name);
+      // 种子文件（cordis.patch.yml 等）始终用最新版覆盖，确保桌面壳的 patch 层
+      // （如 webserver host 覆盖）在应用升级后仍能生效（package.json 单独合并以保留用户插件）。
+      cpSync(join(src, name), df, { recursive: true, force: true });
+    }
+  } catch (err) {
+    console.error('[dsh-harmony] ensureDesktopProfile 失败:', err);
+  }
+}
+
+/** 将 dshmarket 复制到 $DSH_HOME/profiles/node_modules/dshmarket（复制而非 symlink）。 */
+function ensureDshMarketProfileLink(home) {
+  const src = join(DSH_ROOT, 'node_modules', 'dshmarket');
+  if (!existsSync(join(src, 'package.json'))) return;
+  const dest = join(home, 'profiles', 'node_modules', 'dshmarket');
+  if (existsSync(join(dest, 'package.json'))) return;
+  try {
+    mkdirSync(join(home, 'profiles', 'node_modules'), { recursive: true });
+    cpSync(src, dest, { recursive: true, dereference: true });
+    console.log('[dsh-harmony] 已复制 dshmarket → profiles/node_modules');
+  } catch (err) {
+    console.error('[dsh-harmony] dshmarket 复制失败（不阻塞）:', err.message);
+  }
+}
+
+/**
+ * 选择一个渲染进程可访问的 host：优先局域网 IPv4，其次 127.0.0.1。
+ * 鸿蒙 NEXT 下渲染进程访问 loopback 可能被网络隔离，故用局域网 IP。
+ */
+function pickReachableHost() {
+  try {
+    const ifaces = networkInterfaces();
+    for (const name of Object.keys(ifaces)) {
+      for (const info of ifaces[name] ?? []) {
+        if (info.family === 'IPv4' && !info.internal && info.address) {
+          return info.address;
+        }
+      }
+    }
+  } catch { /* ignore */ }
+  return '127.0.0.1';
+}
+
+/** 启动 dsh Host（desktop profile，进程内）。返回 { ctx, shutdown, port, url } 或 null。 */
+async function startHost() {
+  const entry = findProfileBootEntry();
+  if (!entry) {
+    console.error('[dsh-harmony] dsh 未构建或产物缺失，宿主未启动');
+    return null;
+  }
+  if (!process.env.DSH_HOME) {
+    process.env.DSH_HOME = join(app.getPath('userData'), '.dsh');
+  }
+  console.log('[dsh-harmony] DSH_HOME =', process.env.DSH_HOME);
+  ensureDesktopProfile(process.env.DSH_HOME);
+  ensureDshMarketProfileLink(process.env.DSH_HOME);
+  process.env.DSH_DISABLE_HMR = '1';
+
+  try {
+    const profileBoot = await import(pathToFileURL(entry).href);
+    const appBoot = await import(pathToFileURL(DSH_APP_BOOT_LIB()).href);
+    const runProfile = profileBoot.runProfile;
+    const loadLayeredEnv = appBoot.loadLayeredEnv;
+
+    const { ctx, shutdown } = await runProfile({
+      environment: loadLayeredEnv('dsh'),
+      profile: 'desktop',
+      patchFiles: [],
+      // 绑定 0.0.0.0（已 patch 掉 dsh 的 0.0.0.0 拒绝检查）：鸿蒙 NEXT 下 Chromium
+      // 渲染进程访问 127.0.0.1 存在 loopback 网络隔离，改绑全部网卡 + 渲染进程走局域网 IP。
+      args: ['--port', '0', '--host', '0.0.0.0'],
+    });
+    if (!ctx.webServer) {
+      let keys = '';
+      try { keys = Object.keys(ctx).join(','); } catch (e) { keys = '(keys fail: ' + String(e) + ')'; }
+      let zstd = '?';
+      try { zstd = typeof require('node:zlib').createZstdDecompress; } catch (e) { zstd = 'err:' + String(e); }
+      globalThis.__hostError = 'webServer undefined | zlib.zstd=' + zstd + ' | ctx keys: ' + keys;
+      console.error('[dsh-harmony] ctx.webServer 缺失, zlib.zstd=' + zstd + ', ctx keys:', keys);
+      return null;
+    }
+    const port = ctx.webServer.port;
+    const host = pickReachableHost();
+    console.log('[dsh-harmony] host 就绪: http://' + host + ':' + port + '/');
+    return {
+      ctx,
+      shutdown: (code) => shutdown.shutdown(code ?? 0),
+      port,
+      url: 'http://' + host + ':' + port + '/',
+    };
+  } catch (err) {
+    console.error('[dsh-harmony] host 启动失败:', err);
+    const { inspect } = require('node:util');
+    // 扁平化提取 AggregateError 链上的所有错误消息（含 cause 与 errors 数组）
+    const msgs = [];
+    const visit = (e, d) => {
+      if (!e || d > 6) return;
+      if (e.errors && Array.isArray(e.errors)) {
+        for (const sub of e.errors) {
+          if (sub && sub.message) msgs.push(sub.message.split('\n')[0]);
+          visit(sub, d + 1);
+        }
+      }
+      if (e.cause) visit(e.cause, d + 1);
+    };
+    visit(err, 0);
+    globalThis.__hostError = (msgs.length ? msgs.join(' || ') : inspect(err, { depth: 4, colors: false })).slice(0, 2500);
+    return null;
+  }
+}
+
+// ── 生命周期 ──────────────────────────────────────────────────────────
+process.on('uncaughtException', (err) => console.error('[dsh-harmony] uncaughtException:', err));
+process.on('unhandledRejection', (reason) => console.error('[dsh-harmony] unhandledRejection:', reason));
+
+// loopback 代理绕过：渲染进程加载 127.0.0.1 同源，避免被系统代理劫持（对齐 desktop lifecycle.ts）
+function ensureLoopbackNoProxy() {
+  const loopback = ['127.0.0.1', 'localhost', '::1'];
+  for (const key of ['NO_PROXY', 'no_proxy']) {
+    const existing = (process.env[key] ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+    const next = new Set(existing);
+    for (const host of loopback) next.add(host);
+    process.env[key] = [...next].join(',');
+  }
+  app.commandLine.appendSwitch('proxy-bypass-list', '<-loopback>');
+}
+ensureLoopbackNoProxy();
+
+let host = null;
+let hostStatus = 'PENDING';
+
+app.whenReady().then(async () => {
+  // 先建窗（便于用标题观察启动进度），再解压 + 启动 host
+  let win;
+  try {
+    win = new BrowserWindow({
+      width: 1200,
+      height: 800,
+      title: 'DeepSeek Harness',
+    });
+    win.setWindowButtonVisibility(true);
+  } catch (e) {
+    globalThis.__winError = String(e && e.message ? e.message : e);
+    console.error('[dsh-harmony] BrowserWindow 创建失败:', e);
+    return;
+  }
+
+  win.webContents.on('did-fail-load', (_e, code, desc, failedUrl) => {
+    console.error('[dsh-harmony] failed to load ' + failedUrl + ': ' + code + ' ' + desc);
+    win.setTitle(hostStatus + ' | FAIL[' + code + ']');
+  });
+  win.webContents.on('did-finish-load', () => {
+    win.setTitle(hostStatus + ' | ' + win.webContents.getURL());
+  });
+
+  win.setTitle('STEP: extract');
+  if (!(await ensureDshExtracted())) {
+    console.error('[dsh-harmony] dsh 产物解压失败');
+  }
+
+  win.setTitle('STEP: startHost');
+  host = await startHost();
+
+  if (host) {
+    hostStatus = 'HOST-OK ' + host.url;
+    win.setTitle(hostStatus);
+    void win.loadURL(host.url);
+  } else {
+    const v = process.versions;
+    hostStatus = 'HOST-NULL node=' + (v.node ?? '?') + ' electron=' + (v.electron ?? '?')
+      + ' | ' + (globalThis.__hostError ?? 'no-error')
+      + ' | EXTRACT:' + (globalThis.__extractError ?? 'ok');
+    win.setTitle(hostStatus);
+    void win.loadURL('about:blank');
+    console.error('[dsh-harmony] dsh Host 启动失败，已加载兜底空白页');
+  }
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      const w = new BrowserWindow({ width: 1200, height: 800 });
+      if (host) void w.loadURL(host.url);
+    }
+  });
+});
+
+app.on('window-all-closed', () => {
+  app.quit();
+});
+
+app.on('before-quit', () => {
+  if (host) {
+    try { void Promise.resolve(host.shutdown()).finally(() => app.quit()); } catch { /* ignore */ }
+  }
+});

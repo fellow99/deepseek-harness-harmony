@@ -1,24 +1,42 @@
 {
   "app": {
-    "signingConfigs": [],
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "C:\\Users\\Administrator\\.ohos\\config\\default_ohos_electron_hap_4U_HObqjNEDLO9jB1duCfWaN3EJcRZxg-H-yLU_-C14=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "<已移除>",
+          "profile": "C:\\Users\\Administrator\\.ohos\\config\\default_ohos_electron_hap_4U_HObqjNEDLO9jB1duCfWaN3EJcRZxg-H-yLU_-C14=.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "C:\\Users\\Administrator\\.ohos\\config\\default_ohos_electron_hap_4U_HObqjNEDLO9jB1duCfWaN3EJcRZxg-H-yLU_-C14=.p12",
+          "storePassword": "<已移除>"
+        }
+      }
+    ],
     "products": [
       {
         "name": "default",
         "signingConfig": "default",
-        "targetSdkVersion": "6.1.1(24)",
-        "compatibleSdkVersion": "5.0.3(15)",
+        "compatibleSdkVersion": "5.0.5(17)",
+        "compatibleSdkVersionStage": "release",
         "runtimeOS": "HarmonyOS",
         "buildOption": {
+          "nativeLib": {
+            "collectAllLibs": true
+          },
           "strictMode": {
             "caseSensitiveCheck": true,
             "useNormalizedOHMUrl": true
           }
-        }
+        },
+        "targetSdkVersion": "6.1.1(24)"
       }
     ],
     "buildModeSet": [
       {
-        "name": "debug",
+        "name": "debug"
       },
       {
         "name": "release"
@@ -27,8 +45,8 @@
   },
   "modules": [
     {
-      "name": "harness",
-      "srcPath": "./harness",
+      "name": "electron",
+      "srcPath": "./electron",
       "targets": [
         {
           "name": "default",
@@ -37,6 +55,10 @@
           ]
         }
       ]
+    },
+    {
+      "name": "web_engine",
+      "srcPath": "./web_engine"
     }
   ]
 }

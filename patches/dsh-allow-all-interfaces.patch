@@ -1,0 +1,14 @@
+diff --git a/packages/bundle/web-app/src/startup.ts b/packages/bundle/web-app/src/startup.ts
+index af6997cff7..544c119e41 100644
+--- a/packages/bundle/web-app/src/startup.ts
++++ b/packages/bundle/web-app/src/startup.ts
+@@ -66,9 +66,6 @@ export function apply(ctx: Context): void {
+   const program = webCommand()
+   program.action(() => {
+     const options = program.opts<WebOptions>()
+-    if (options.host === '0.0.0.0') {
+-      program.error('error: --host 0.0.0.0 is intentionally not supported yet for safety: it would expose remote code execution to the network; use 127.0.0.1 instead')
+-    }
+     if (options.port !== undefined && !/^\d+$/.test(options.port)) {
+       program.error(`error: --port must be a number, got ${JSON.stringify(options.port)}`)
+     }

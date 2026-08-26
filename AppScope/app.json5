@@ -1,11 +1,15 @@
 {
   "app": {
-    "bundleName": "org.fellow99.deepseek.harness",
+    "bundleName": "com.huawei.ohos_electron",
     "vendor": "example",
     "versionCode": 1000000,
     "versionName": "1.0.0",
-    "buildVersion": "1",
-    "icon": "$media:layered_image",
-    "label": "$string:app_name"
+    "icon": "$media:app_icon",
+    "label": "$string:app_name",
+    "configuration": "$profile:configuration",
+    "multiAppMode": {
+      "multiAppModeType": "multiInstance",
+      "maxCount": 1
+    }
   }
 }

@@ -1,0 +1,62 @@
+# deepseek-harness-desktop 自定义 desktop profile 的用户 patch
+#
+# 目的（产品概念设计第 11 节 A1 方案）：
+#   - 复用 web 组合（dsh-base + dsh-web-app）
+#   - 微调为桌面：关闭 web-runtime 的 URL 打印（桌面应用无需打印「dsh web: http://...」）
+#   - webserver 端口由启动代码经 --port 0 注入（web-app bundle 的 webserver 行
+#     `port: !!js ctx.webStartup.port ?? 3080` 已支持，无需在此覆盖）
+#
+# 语法：覆盖行以 id 定位、整块替换 config（参考 dsh 仓库 cordis.patch.yml 示例）。
+# 覆盖基线（对照 deepseek-harness/packages/bundle/web-app/cordis.patch.yml 的
+# web-runtime 行，printUrl: true → false；surfaceContext/trustedHosts 保持原值）。
+
+- id: web-runtime
+  name: '@deepseek-ai/dsh-web-app'
+  inject: [webStartup]
+  config:
+    printUrl: false
+    surfaceContext: true
+    trustedHosts: !!js ctx.webStartup.trustedHosts
+
+# 鸿蒙桌面版：sharp 已用纯 JS stub 替换（dsh-dist/node_modules/sharp/dist/），
+# attachment-local 保持启用（提供 attachments 服务，host-apiproxy 依赖）。
+# 图片校验变 no-op（不真实解码/缩略图），核心聊天/agent 功能不受影响。
+
+# 鸿蒙桌面版：禁用依赖原生模块（.node）的插件 —— dsh-dist 在 Windows 上收集，原生二进制为
+# win32-x64（node-pty/koffi），在鸿蒙 aarch64 上无法加载：
+#   - subprocess（node-pty）：终端子进程
+#   - sandbox（landlock-run + koffi）：进程沙箱
+#   - bash-sandbox：依赖 subprocess + sandbox
+#   - permission：依赖 shell（subprocess 提供）
+# 注：sandbox-policy/pwsh-sandbox/fs-sandbox 之前不在 pending 列表，不额外禁用。
+- id: subprocess
+  disabled: true
+- id: sandbox
+  disabled: true
+- id: bash-sandbox
+  disabled: true
+- id: permission
+  disabled: true
+
+# 鸿蒙桌面版：强制 webserver 绑定 0.0.0.0（全网卡）。
+# 鸿蒙 NEXT 下 Chromium 渲染进程访问 127.0.0.1 存在 loopback 网络隔离，渲染进程须走局域网 IP。
+# 用 profile 覆盖直接设 host（literal），绕过 --host 参数解析。
+- id: webserver
+  name: '@deepseek-ai/dsh-host-webserver'
+  inject: [webStartup]
+  config:
+    host: '0.0.0.0'
+    port: !!js ctx.webStartup.port ?? 3080
+
+# dsh-market（插件市场）运行配置覆盖（需求 201-dsh-market）
+#
+# dshmarket 经 dsh.profile.bundles 声明为 bundle，其自身 cordis.patch.yml 会
+# insert 行 `{id: dsh-market, name: dshmarket}`（无 config）。此处覆盖该行注入配置：
+#   - profile: desktop —— 市场默认 profile 为 'web'（config?.profile ?? argvProfile() ?? 'web'），
+#     桌面用 'desktop'，必须显式指定，否则安装/删除会写错目录。
+#   - allowRestart: false —— 桌面壳拥有进程生命周期，市场不得 spawn 独立 dsh 进程重启。
+- id: dsh-market
+  name: dshmarket
+  config:
+    profile: desktop
+    allowRestart: false

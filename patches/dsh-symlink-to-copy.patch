@@ -1,0 +1,64 @@
+diff --git a/packages/boot/app-boot/src/profile.ts b/packages/boot/app-boot/src/profile.ts
+index 8f982bed80..e15c6065f7 100644
+--- a/packages/boot/app-boot/src/profile.ts
++++ b/packages/boot/app-boot/src/profile.ts
+@@ -24,7 +24,7 @@
+ 
+ import { createRequire } from 'node:module'
+ import {
+-  existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, symlinkSync, unlinkSync, writeFileSync,
++  cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, symlinkSync, unlinkSync, writeFileSync,
+ } from 'node:fs'
+ import { basename, dirname, join } from 'node:path'
+ import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
+@@ -173,31 +173,39 @@ function ensureSymlink(link: string, target: string): void {
+   try {
+     stat = lstatSync(link)
+   } catch {
+-    // Missing link (first run) 鈥?created below. Any other lstat failure on a
+-    // path we just created the parent of would resurface on symlinkSync.
+     stat = undefined
+   }
+   if (stat !== undefined) {
+     if (!stat.isSymbolicLink()) {
++      // HarmonyOS: 娌欑绂佹 symlink锛屾敼鐢?copy 鐗╁寲锛涚洰褰曞嵆瑙嗕负宸茬墿鍖?+      if (stat.isDirectory()) return
+       throw new Error(`dsh: ${link} exists and is not a symlink; remove it so dsh can manage the installation fallback`)
+     }
+     if (readlinkSync(link) === target) return
+-    // unlink deletes the reparse point itself on Windows too; rmSync treats a
+-    // junction as a directory and throws EISDIR unless recursive.
+     unlinkSync(link)
+   }
+   try {
+     symlinkSync(target, link, 'junction')
+   } catch (error) {
+-    // Concurrent launches heal the same fallback; losing the race to a
+-    // process writing the identical link is success, anything else is not.
+-    // The window between the lstat miss above and this write cannot be
+-    // staged deterministically from the public API.
+-    /* v8 ignore next 4 */
+-    if ((error as NodeJS.ErrnoException).code !== 'EEXIST'
+-      || !lstatSync(link).isSymbolicLink() || readlinkSync(link) !== target) {
+-      throw error
++    const code = (error as NodeJS.ErrnoException).code
++    // HarmonyOS 娌欑绂佹 symlink锛圗ACCES/EPERM/ENOSYS/EOPNOTSUPP锛夛細鏀圭敤 copy 鐗╁寲
++    if (code === 'EACCES' || code === 'EPERM' || code === 'ENOSYS' || code === 'EOPNOTSUPP') {
++      cpSync(target, link, {
++        recursive: true,
++        dereference: true,
++        filter: (src) => !src.slice(target.length + 1).split(/[\\/]/).includes('node_modules'),
++      })
++      return
+     }
++    // EEXIST 绔炴€侊細鍚屼竴閾炬帴宸茬敱骞跺彂杩涚▼鍒涘缓鎴愬姛
++    if (code === 'EEXIST') {
++      try {
++        if (lstatSync(link).isSymbolicLink() && readlinkSync(link) === target) return
++      } catch {
++        // fall through to throw
++      }
++    }
++    throw error
+   }
+ }
+ 
