@@ -1,0 +1,50 @@
+{
+  "module": {
+    "name": "harness",
+    "type": "entry",
+    "description": "$string:module_desc",
+    "mainElement": "HarnessAbility",
+    "deviceTypes": [
+      "2in1"
+    ],
+    "deliveryWithInstall": true,
+    "installationFree": false,
+    "pages": "$profile:main_pages",
+    "abilities": [
+      {
+        "name": "HarnessAbility",
+        "srcEntry": "./ets/harnessability/HarnessAbility.ets",
+        "description": "$string:HarnessAbility_desc",
+        "icon": "$media:layered_image",
+        "label": "$string:HarnessAbility_label",
+        "startWindowIcon": "$media:startIcon",
+        "startWindowBackground": "$color:start_window_background",
+        "exported": true,
+        "skills": [
+          {
+            "entities": [
+              "entity.system.home"
+            ],
+            "actions": [
+              "ohos.want.action.home"
+            ]
+          }
+        ]
+      }
+    ],
+    "extensionAbilities": [
+      {
+        "name": "HarnessBackupAbility",
+        "srcEntry": "./ets/harnessbackupability/HarnessBackupAbility.ets",
+        "type": "backup",
+        "exported": false,
+        "metadata": [
+          {
+            "name": "ohos.extension.backup",
+            "resource": "$profile:backup_config"
+          }
+        ],
+      }
+    ]
+  }
+}

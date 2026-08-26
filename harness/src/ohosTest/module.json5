@@ -1,0 +1,11 @@
+{
+  "module": {
+    "name": "harness_test",
+    "type": "feature",
+    "deviceTypes": [
+      "2in1"
+    ],
+    "deliveryWithInstall": true,
+    "installationFree": false
+  }
+}

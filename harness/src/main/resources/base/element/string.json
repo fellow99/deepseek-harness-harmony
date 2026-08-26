@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "module description"
+    },
+    {
+      "name": "HarnessAbility_desc",
+      "value": "description"
+    },
+    {
+      "name": "HarnessAbility_label",
+      "value": "label"
+    }
+  ]
+}
