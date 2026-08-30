@@ -1,5 +1,5 @@
 diff --git a/packages/boot/app-boot/src/profile.ts b/packages/boot/app-boot/src/profile.ts
-index 8f982bed80..e15c6065f7 100644
+index 8f982bed80..086c2d03ab 100644
 --- a/packages/boot/app-boot/src/profile.ts
 +++ b/packages/boot/app-boot/src/profile.ts
 @@ -24,7 +24,7 @@
@@ -11,24 +11,16 @@ index 8f982bed80..e15c6065f7 100644
  } from 'node:fs'
  import { basename, dirname, join } from 'node:path'
  import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
-@@ -173,31 +173,39 @@ function ensureSymlink(link: string, target: string): void {
-   try {
-     stat = lstatSync(link)
-   } catch {
--    // Missing link (first run) 鈥?created below. Any other lstat failure on a
--    // path we just created the parent of would resurface on symlinkSync.
-     stat = undefined
+@@ -179,6 +179,8 @@ function ensureSymlink(link: string, target: string): void {
    }
    if (stat !== undefined) {
      if (!stat.isSymbolicLink()) {
-+      // HarmonyOS: 娌欑绂佹 symlink锛屾敼鐢?copy 鐗╁寲锛涚洰褰曞嵆瑙嗕负宸茬墿鍖?+      if (stat.isDirectory()) return
++      // HarmonyOS sandbox forbids symlinks; a real directory is already materialized via copy.
++      if (stat.isDirectory()) return
        throw new Error(`dsh: ${link} exists and is not a symlink; remove it so dsh can manage the installation fallback`)
      }
      if (readlinkSync(link) === target) return
--    // unlink deletes the reparse point itself on Windows too; rmSync treats a
--    // junction as a directory and throws EISDIR unless recursive.
-     unlinkSync(link)
-   }
+@@ -189,15 +191,25 @@ function ensureSymlink(link: string, target: string): void {
    try {
      symlinkSync(target, link, 'junction')
    } catch (error) {
@@ -41,7 +33,7 @@ index 8f982bed80..e15c6065f7 100644
 -      || !lstatSync(link).isSymbolicLink() || readlinkSync(link) !== target) {
 -      throw error
 +    const code = (error as NodeJS.ErrnoException).code
-+    // HarmonyOS 娌欑绂佹 symlink锛圗ACCES/EPERM/ENOSYS/EOPNOTSUPP锛夛細鏀圭敤 copy 鐗╁寲
++    // HarmonyOS sandbox forbids symlinks (EACCES/EPERM/ENOSYS/EOPNOTSUPP): fall back to copy materialization.
 +    if (code === 'EACCES' || code === 'EPERM' || code === 'ENOSYS' || code === 'EOPNOTSUPP') {
 +      cpSync(target, link, {
 +        recursive: true,
@@ -50,7 +42,7 @@ index 8f982bed80..e15c6065f7 100644
 +      })
 +      return
      }
-+    // EEXIST 绔炴€侊細鍚屼竴閾炬帴宸茬敱骞跺彂杩涚▼鍒涘缓鎴愬姛
++    // EEXIST race: an identical link was already created by a concurrent process.
 +    if (code === 'EEXIST') {
 +      try {
 +        if (lstatSync(link).isSymbolicLink() && readlinkSync(link) === target) return

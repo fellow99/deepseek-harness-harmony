@@ -2,19 +2,22 @@
 /**
  * 构建 dsh（deepseek-harness）：apply Electron 兼容 patch + 安装依赖 + 构建产物。
  *
- * 用法：npm run build:dsh
+ * 用法：node scripts/build-dsh.mjs
  * 前置：dsh 与本工程同级目录（../deepseek-harness），git 仓库。
+ * 说明：本脚本只依赖同级 ../deepseek-harness 与 ../dsh-market，与 deepseek-harness-desktop 无关。
  */
 import { execSync } from 'node:child_process';
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const desktopRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
-const dshRoot = resolve(desktopRoot, '../deepseek-harness');
+const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
+const dshRoot = resolve(projectRoot, '../deepseek-harness');
 const patchFiles = [
-  resolve(desktopRoot, 'patches/dsh-disable-hmr.patch'),
-  resolve(desktopRoot, 'patches/dsh-disable-native-picker.patch'),
+  resolve(projectRoot, 'patches/dsh-symlink-to-copy.patch'),
+  resolve(projectRoot, 'patches/dsh-allow-all-interfaces.patch'),
+  resolve(projectRoot, 'patches/dsh-disable-hmr.patch'),
+  resolve(projectRoot, 'patches/dsh-disable-native-picker.patch'),
 ];
 
 // pnpm/tsdown 在无 TTY 时中止模块重建与依赖检查，故设 CI 使其自动处理
@@ -43,12 +46,34 @@ if (!existsSync(dshRoot)) {
   process.exit(1);
 }
 
-// 0.5 清理 vendor 残留（collect/deploy 历史错误产物，会被 tsdown 的 vendor/* glob 匹配
-//     并导致 build 报 dsh-root entry 失败）
-const vendorJunk = resolve(dshRoot, 'vendor/deepseek-harness-desktop');
-if (existsSync(vendorJunk)) {
-  rmSync(vendorJunk, { recursive: true, force: true });
-  console.log('[build-dsh] 清理 vendor 残留: vendor/deepseek-harness-desktop');
+// 0.5 清理 workspace 残留：版本切换或 collect/deploy 遗留的空壳目录会被 tsdown 的
+//     vendor/* 与 packages/*/* glob 匹配，并导致 build 报 dsh-root entry 失败。
+//     真包至少含 package.json 或 src/；两者皆无的空壳目录即残留，直接删除。
+const workspaceResidueRoots = [];
+{
+  const vendorDir = resolve(dshRoot, 'vendor');
+  if (existsSync(vendorDir)) {
+    for (const entry of readdirSync(vendorDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      workspaceResidueRoots.push(resolve(vendorDir, entry.name));
+    }
+  }
+  const packagesDir = resolve(dshRoot, 'packages');
+  if (existsSync(packagesDir)) {
+    for (const group of readdirSync(packagesDir, { withFileTypes: true })) {
+      if (!group.isDirectory()) continue;
+      const groupDir = resolve(packagesDir, group.name);
+      for (const pkg of readdirSync(groupDir, { withFileTypes: true })) {
+        if (!pkg.isDirectory()) continue;
+        workspaceResidueRoots.push(resolve(groupDir, pkg.name));
+      }
+    }
+  }
+}
+for (const dir of workspaceResidueRoots) {
+  if (existsSync(resolve(dir, 'package.json')) || existsSync(resolve(dir, 'src'))) continue;
+  rmSync(dir, { recursive: true, force: true });
+  console.log(`[build-dsh] 清理 workspace 残留: ${dir.slice(dshRoot.length + 1).replaceAll('\\', '/')}`);
 }
 
 // 1. apply patches（幂等：--reverse --check 成功即已应用，跳过）
@@ -81,7 +106,7 @@ run('pnpm run build:lib:client', dshRoot);
 run('pnpm run build:web', dshRoot);
 
 // 4. 构建 dsh-market（插件市场，同级 ../dsh-market 源码引用）
-const marketRoot = resolve(desktopRoot, '../dsh-market');
+const marketRoot = resolve(projectRoot, '../dsh-market');
 if (existsSync(marketRoot)) {
   if (!existsSync(resolve(marketRoot, 'node_modules'))) {
     run('npm install', marketRoot);

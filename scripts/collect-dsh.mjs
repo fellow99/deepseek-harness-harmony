@@ -1,23 +1,24 @@
 #!/usr/bin/env node
 /**
  * 收集 dsh 部署产物：pnpm deploy 物化依赖闭包 → 物化 Junction → 补全 @deepseek-ai 包
- * 与非 hoisted 依赖 → 复制 web dist。
+ * 与非 hoisted 依赖 → 复制 web dist → 写 sharp 纯 JS stub。
  *
- * 产出 desktop/dsh-dist/（真实文件、无 Junction、无 .pnpm），供 forge extraResource 打进
- * out/resources/dsh-dist。前置：dsh 已构建（npm run build:dsh）。
+ * 产出 dsh-dist/（真实文件、无 Junction、无 .pnpm），随后由 tar 压成 dsh-dist.tar.gz 打入 resfile。
+ * 前置：dsh 已构建（node scripts/build-dsh.mjs）。本脚本只依赖同级 ../deepseek-harness 与
+ * ../dsh-market，与 deepseek-harness-desktop 无关。
  *
  * 背景：pnpm deploy --legacy 物化的 node_modules 是「链接结构」（外部依赖为 Junction 指向
  * .pnpm store），打包分发后指向失效，故需物化为真实文件。且 deploy 不物化：① peerDependencies
  * （如 cordis-plugin-group、大量 packages 下插件）；② 非 hoisted 的外部依赖（如 zod）。
  */
 import { execSync } from 'node:child_process';
-import { cpSync, existsSync, lstatSync, readFileSync, readdirSync, realpathSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, lstatSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const desktopRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
-const dshRoot = resolve(desktopRoot, '../deepseek-harness');
-const distDir = resolve(desktopRoot, 'dsh-dist');
+const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
+const dshRoot = resolve(projectRoot, '../deepseek-harness');
+const distDir = resolve(projectRoot, 'dsh-dist');
 
 function run(cmd, cwd) {
   console.log(`\n> ${cmd}`);
@@ -109,7 +110,7 @@ function copyMarketRuntimeDeps(srcNm, destNm, marketRoot) {
  *  复制 package.json + cordis.patch.yml + lib/ + client/ + 运行时依赖（undici/js-yaml 等），
  *  排除源码/测试/devDeps；@deepseek-ai 依赖从宿主 dsh-dist 解析。 */
 function collectDshMarket() {
-  const marketRoot = resolve(desktopRoot, '../dsh-market');
+  const marketRoot = resolve(projectRoot, '../dsh-market');
   const dest = resolve(distDir, 'node_modules/dshmarket');
   if (!existsSync(resolve(marketRoot, 'package.json'))) {
     console.error(`[collect-dsh] dsh-market 未找到（打包必需，先构建 ../dsh-market）: ${marketRoot}`);
@@ -237,6 +238,40 @@ function pruneForeignPrebuilds(dir, depth = 0) {
   }
 }
 
+/** 用纯 JS stub 替换 sharp 原生模块入口（libvips 在鸿蒙 aarch64 不可用，见 docs/工程规划.md §18.3）。 */
+function applySharpStub() {
+  const sharpDist = resolve(distDir, 'node_modules/sharp/dist');
+  if (!existsSync(resolve(sharpDist, 'index.mjs')) || !existsSync(resolve(sharpDist, 'index.cjs'))) {
+    console.warn('[collect-dsh] sharp 未找到，跳过 stub');
+    return;
+  }
+  const header = '/*!\n * Pure-JS sharp stub for HarmonyOS aarch64 (libvips unavailable).\n * See docs/工程规划.md §18.3.\n */\n';
+  const body = `function sharp(_input, _options) {
+  const toBuffer = async () => Buffer.alloc(0);
+  const raw = () => ({ toBuffer });
+  const chain = {
+    metadata: async () => ({ format: 'png', width: 1, height: 1 }),
+    raw,
+    toBuffer,
+    toFile: async () => undefined,
+    stats: async () => ({ channels: 3 }),
+    info: async () => ({ format: 'png', width: 1, height: 1 }),
+  };
+  return new Proxy(chain, {
+    get(target, prop) {
+      if (prop in target) return target[prop];
+      return () => chain;
+    },
+  });
+}
+`;
+  const esm = `${header}${body}sharp.default = sharp;\nexport default sharp;\n`;
+  const cjs = `${header}'use strict';\n\n${body}module.exports = sharp;\n`;
+  writeFileSync(resolve(sharpDist, 'index.mjs'), esm);
+  writeFileSync(resolve(sharpDist, 'index.cjs'), cjs);
+  console.log('[collect-dsh] sharp 纯 JS stub 已写入 node_modules/sharp/dist');
+}
+
 // 0. 校验
 if (!existsSync(dshRoot)) {
   console.error(`[collect-dsh] dsh 未找到: ${dshRoot}`);
@@ -274,6 +309,9 @@ if (existsSync(pnpmStore)) rmSync(pnpmStore, { recursive: true, force: true });
 console.log('\n[collect-dsh] 清理非目标架构 prebuilds...');
 pruneForeignPrebuilds(join(distDir, 'node_modules'));
 
+// 6c. 写 sharp 纯 JS stub（libvips 在鸿蒙 aarch64 不可用）
+applySharpStub();
+
 // 7. 复制 web dist（pnpm deploy 不物化 build 产物，frontend-static 经
 //    require.resolve('@deepseek-ai/dsh-web-frontend/dist/index.html') 定位）
 const webDist = resolve(dshRoot, 'apps/web/dist');
@@ -287,7 +325,7 @@ if (existsSync(webDist)) {
 }
 
 // 8. 复制 desktop profile 到 dsh-dist/profiles/desktop（供 host.ts 复制到 $DSH_HOME）
-const profileSrc = resolve(desktopRoot, 'profiles/desktop');
+const profileSrc = resolve(projectRoot, 'profiles/desktop');
 const profileDest = resolve(distDir, 'profiles/desktop');
 if (existsSync(profileSrc)) {
   cpSync(profileSrc, profileDest, { recursive: true });
