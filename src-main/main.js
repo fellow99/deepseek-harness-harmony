@@ -8,7 +8,7 @@
  * 5 万+ 小文件导致打包过慢/超限），首次启动解压到 userData/dsh-dist 后加载。
  */
 'use strict';
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, Menu } = require('electron');
 const {
   cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync,
   writeSync, openSync, closeSync, createReadStream,
@@ -17,6 +17,62 @@ const { createGunzip } = require('node:zlib');
 const { join, dirname } = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { networkInterfaces } = require('node:os');
+
+// ── 启动 loading 页 ─────────────────────────────────────────────────
+// 首次启动解压 dsh-dist.tar.gz 耗时较长（~45s），期间用内联 loading 页提示用户等待初始化。
+const LOADING_HTML = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DeepSeek Harness</title>
+  <style>
+    html, body { height: 100%; margin: 0; }
+    body {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background: #0f1115; color: #e6e8ec; font-family: system-ui, -apple-system, sans-serif;
+      gap: 20px;
+    }
+    .spinner {
+      width: 40px; height: 40px; border-radius: 50%;
+      border: 3px solid rgba(255,255,255,0.15); border-top-color: #4c9aff;
+      animation: spin 0.9s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .title { font-size: 18px; font-weight: 600; }
+    .hint { font-size: 13px; color: #8a9099; }
+  </style>
+</head>
+<body>
+  <div class="spinner"></div>
+  <div class="title">DeepSeek Harness</div>
+  <div class="hint">应用初始化中，请稍候…</div>
+</body>
+</html>`;
+const LOADING_URL = 'data:text/html;charset=utf-8,' + encodeURIComponent(LOADING_HTML);
+
+// 渲染进程 polyfill：鸿蒙 Chromium 的 Web Crypto 可能缺 crypto.randomUUID，
+// 在每次页面 dom-ready 时注入主世界，用 getRandomValues 兜底生成 UUID v4。
+const RENDERER_POLYFILL = [
+  "if (typeof crypto.randomUUID !== 'function') {",
+  "  crypto.randomUUID = function randomUUID() {",
+  "    try {",
+  "      var b = crypto.getRandomValues(new Uint8Array(16));",
+  "      b[6] = (b[6] & 0x0f) | 0x40;",
+  "      b[8] = (b[8] & 0x3f) | 0x80;",
+  "      var h = '';",
+  "      for (var i = 0; i < 16; i++) h += b[i].toString(16).padStart(2, '0');",
+  "      return h.slice(0,8)+'-'+h.slice(8,12)+'-'+h.slice(12,16)+'-'+h.slice(16,20)+'-'+h.slice(20);",
+  "    } catch (e) {",
+  "      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {",
+  "        var r = (Math.random() * 16) | 0;",
+  "        var v = c === 'x' ? r : (r & 0x3) | 0x8;",
+  "        return v.toString(16);",
+  "      });",
+  "    }",
+  "  };",
+  "}",
+].join('\n');
 
 // ── dsh 部署产物路径 ─────────────────────────────────────────────────
 const DSH_ARCHIVE = join(__dirname, 'dsh-dist.tar.gz');
@@ -293,16 +349,18 @@ function ensureLoopbackNoProxy() {
 ensureLoopbackNoProxy();
 
 let host = null;
-let hostStatus = 'PENDING';
+
+// 去掉 Electron 默认菜单
+Menu.setApplicationMenu(null);
 
 app.whenReady().then(async () => {
-  // 先建窗（便于用标题观察启动进度），再解压 + 启动 host
   let win;
   try {
     win = new BrowserWindow({
       width: 1200,
       height: 800,
       title: 'DeepSeek Harness',
+      autoHideMenuBar: true,
     });
     win.setWindowButtonVisibility(true);
   } catch (e) {
@@ -311,32 +369,27 @@ app.whenReady().then(async () => {
     return;
   }
 
+  // 先加载 loading 页（首装解压 + 启动 host 耗时较长，提示用户等待初始化）
+  void win.loadURL(LOADING_URL);
+
   win.webContents.on('did-fail-load', (_e, code, desc, failedUrl) => {
     console.error('[dsh-harmony] failed to load ' + failedUrl + ': ' + code + ' ' + desc);
-    win.setTitle(hostStatus + ' | FAIL[' + code + ']');
-  });
-  win.webContents.on('did-finish-load', () => {
-    win.setTitle(hostStatus + ' | ' + win.webContents.getURL());
   });
 
-  win.setTitle('STEP: extract');
+  // 每次页面 dom-ready 时向主世界注入 crypto.randomUUID polyfill（渲染进程 Chromium 可能缺失）
+  win.webContents.on('dom-ready', () => {
+    win.webContents.executeJavaScript(RENDERER_POLYFILL).catch(() => {});
+  });
+
   if (!(await ensureDshExtracted())) {
     console.error('[dsh-harmony] dsh 产物解压失败');
   }
 
-  win.setTitle('STEP: startHost');
   host = await startHost();
 
   if (host) {
-    hostStatus = 'HOST-OK ' + host.url;
-    win.setTitle(hostStatus);
     void win.loadURL(host.url);
   } else {
-    const v = process.versions;
-    hostStatus = 'HOST-NULL node=' + (v.node ?? '?') + ' electron=' + (v.electron ?? '?')
-      + ' | ' + (globalThis.__hostError ?? 'no-error')
-      + ' | EXTRACT:' + (globalThis.__extractError ?? 'ok');
-    win.setTitle(hostStatus);
     void win.loadURL('about:blank');
     console.error('[dsh-harmony] dsh Host 启动失败，已加载兜底空白页');
   }
