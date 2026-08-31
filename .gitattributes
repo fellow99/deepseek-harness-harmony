@@ -1,0 +1,3 @@
+# 强制 patch 文件使用 LF 行尾：../deepseek-harness 源码为 LF，git apply 要求 patch 与源码行尾一致。
+# 本仓库 core.autocrlf=true 会把文本文件 checkout 成 CRLF，会导致 build-dsh.mjs 的 git apply 失败。
+*.patch text eol=lf
