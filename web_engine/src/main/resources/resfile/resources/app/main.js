@@ -348,6 +348,63 @@ function ensureLoopbackNoProxy() {
 }
 ensureLoopbackNoProxy();
 
+// ── 沙箱 HOME 修正 ─────────────────────────────────────────────────────
+// 鸿蒙沙箱中 Node 的 os.homedir() 解析 HOME/getpwuid 得到 /storage/Users/currentUser
+// （沙箱外的系统用户目录，应用无权访问，读它抛 EPERM）。dsh 的目录浏览器
+// （directory-picker-browse）以 homedir() 作为「选择工作区」的起始目录，导致
+// 一打开就报 `cannot list /storage/Users/currentUser: EPERM: operation not permitted`。
+// 把 HOME 显式指向应用沙箱可写的 files 目录（userData），homedir() 即返回沙箱内路径，
+// os.homedir() 在 POSIX 下优先取 HOME 环境变量。必须在 dsh Host 启动（任何 homedir() 调用）前设置。
+function ensureSandboxHome() {
+  try {
+    const home = app.getPath('userData');
+    process.env.HOME = home;
+    process.env.USERPROFILE = home; // 兼容 Windows 风格探测（鸿蒙 Node 以 POSIX 为主）
+    console.log('[dsh-harmony] HOME 已指向沙箱目录:', home, '| homedir() =', require('node:os').homedir());
+  } catch (err) {
+    console.error('[dsh-harmony] ensureSandboxHome 失败:', err);
+  }
+}
+ensureSandboxHome();
+
+/**
+ * 渲染进程请求头改写：让发往 dsh webserver 的请求在 Host 围栏看来来自 loopback。
+ *
+ * 背景：鸿蒙 NEXT 下 Chromium 渲染进程访问 127.0.0.1 被进程间网络隔离拦截，故 webserver
+ * 绑 0.0.0.0、渲染进程走局域网 IP（http://192.168.x.x:port）加载。dsh 的 client-connection
+ * 安全围栏把 settings.describe / credentials.* / host.pickDirectory / host.openPath /
+ * agentPreset.* 等「特权方法」锁定为 loopback-only（见 dsh 源码 PRIVILEGED_METHODS：
+ * 这些方法读取/修改用户配置与密钥，非 loopback 来源一律 HTTP 403）。普通方法因局域网 IP
+ * 经 resolveLanTrust 自动加入 trustedHosts 而正常，唯独特权方法在局域网 Host 头下 403。
+ *
+ * 修复：渲染进程本就是与 Host 同机的内嵌浏览器（可信），在其请求出栈前把 Host/Origin
+ * 改写为 127.0.0.1:<port>。TCP 连接仍打到局域网 IP（不受 loopback 隔离影响），仅 HTTP
+ * Host 头变为 loopback，围栏据此放行。此改写只作用于本应用内嵌渲染进程的 session，
+ * 不影响 webserver 对局域网内其他设备的行为——它们的请求不经过此 session，特权方法对其
+ * 依然 403，安全围栏语义不变。
+ */
+function installLoopbackHeaderRewrite(win, port) {
+  const loopbackAuthority = '127.0.0.1:' + String(port);
+  try {
+    win.webContents.session.webRequest.onBeforeSendHeaders((details, callback) => {
+      const headers = details.requestHeaders ?? {};
+      let target = null;
+      try { target = new URL(details.url); } catch { /* 非 http(s) URL（data: 等）跳过 */ }
+      if (target !== null && (target.protocol === 'http:' || target.protocol === 'https:') && target.port === String(port)) {
+        headers.Host = loopbackAuthority;
+        // 同源请求浏览器会带 Origin（POST  fetch）；改写为 loopback 以通过围栏的 Origin 比对。
+        if (typeof headers.Origin === 'string' && headers.Origin.length > 0) {
+          headers.Origin = 'http://' + loopbackAuthority;
+        }
+      }
+      callback({ requestHeaders: headers });
+    });
+    console.log('[dsh-harmony] 已安装渲染进程 Host→loopback 改写，端口', port);
+  } catch (err) {
+    console.error('[dsh-harmony] webRequest 头改写安装失败:', err);
+  }
+}
+
 let host = null;
 
 // 去掉 Electron 默认菜单
@@ -388,6 +445,9 @@ app.whenReady().then(async () => {
   host = await startHost();
 
   if (host) {
+    // 在加载 dsh Web UI 前安装请求头改写：渲染进程走局域网 IP 建连，但 Host/Origin
+    // 改写为 127.0.0.1，使 dsh 的 loopback-only 特权方法围栏（settings/credentials 等）放行。
+    installLoopbackHeaderRewrite(win, host.port);
     void win.loadURL(host.url);
   } else {
     void win.loadURL('about:blank');
@@ -397,7 +457,10 @@ app.whenReady().then(async () => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       const w = new BrowserWindow({ width: 1200, height: 800 });
-      if (host) void w.loadURL(host.url);
+      if (host) {
+        installLoopbackHeaderRewrite(w, host.port);
+        void w.loadURL(host.url);
+      }
     }
   });
 });
