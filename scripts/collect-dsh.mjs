@@ -273,6 +273,72 @@ function applySharpStub() {
   console.log('[collect-dsh] sharp 纯 JS stub 已写入 node_modules/sharp/dist');
 }
 
+/**
+ * HarmonyOS: 禁用 agent preset 中依赖 shell/subprocess/pty（node-pty 等原生模块，MVP 已禁用）
+ * 的工具行。
+ *
+ * 背景：agent preset（config/agent-presets/<id>/agent.cordis.yml）由 cordis Include 在会话创建时
+ * 直接组合成独立 EntryTree（见 dsh packages/preset/agent-presets/src/mount.ts），host 的
+ * cordis.patch.yml 只覆盖 host-plane 行、管不到 agent-plane；这些工具行会无限等待被禁用的
+ * shell/subprocess 服务，mount 的 inactiveRows 审计报 "waiting for shell/subprocess"，preset 挂载
+ * 失败 → session.create 抛 agent-preset-invalid → 工作区无法选中、点聊天区反复弹「选择工作区」。
+ * inactiveRows 会跳过 disabled: true 的行，故禁用后 preset 可正常挂载（终端/内容搜索能力按
+ * §18.3 取舍，文件读写 tool-fs 等不依赖子进程的工具保留）。
+ */
+const HARMONY_DISABLED_PRESET_ROWS = {
+  'tool-bash': '依赖 shell 服务（bash 终端，node-pty 子进程，MVP 已禁用）',
+  'tool-fs-search': '依赖 subprocess 跑 ripgrep 内容搜索（node-pty 已禁用）',
+  'persistent-shell': '依赖 pty 终端服务（node-pty 已禁用）',
+};
+
+function patchAgentPresets() {
+  const presetsDir = resolve(distDir, 'config/agent-presets');
+  if (!existsSync(presetsDir)) {
+    console.warn('[collect-dsh] agent-presets 目录缺失，跳过 preset 补丁');
+    return;
+  }
+  let total = 0;
+  for (const name of readdirSync(presetsDir)) {
+    const file = resolve(presetsDir, name, 'agent.cordis.yml');
+    if (!existsSync(file)) continue;
+    const original = readFileSync(file, 'utf8');
+    const lines = original.split('\n');
+    const out = [];
+    let fileChanged = false;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      out.push(line);
+      // 仅匹配顶层行（列 0 的 `- id: <rowId>`），不动 group 内 4 空格缩进的嵌套行。
+      const m = /^- id: ([A-Za-z0-9_-]+)\s*$/.exec(line);
+      const reason = m ? HARMONY_DISABLED_PRESET_ROWS[m[1]] : undefined;
+      if (reason === undefined) continue;
+      // 收集该 row 的后续 2 空格缩进行（4 空格的 config 嵌套内容不计入）。
+      const block = [];
+      let j = i + 1;
+      while (j < lines.length && /^  \S/.test(lines[j])) { block.push(lines[j]); j++; }
+      const hasDisabled = block.some(b => /^  disabled:/.test(b));
+      for (const b of block) {
+        if (/^  disabled:/.test(b)) {
+          out.push(`  disabled: true # HarmonyOS: ${reason}`);
+          fileChanged = true; total++;
+        } else {
+          out.push(b);
+          if (!hasDisabled && /^  name:/.test(b)) {
+            out.push(`  disabled: true # HarmonyOS: ${reason}`);
+            fileChanged = true; total++;
+          }
+        }
+      }
+      i = j - 1; // block 已输出，外层循环从 block 之后继续
+    }
+    if (fileChanged) {
+      writeFileSync(file, out.join('\n'));
+      console.log(`[collect-dsh] preset ${name}: 已禁用鸿蒙不可用的终端/搜索工具行`);
+    }
+  }
+  console.log(`[collect-dsh] agent preset 补丁完成，共禁用 ${total} 个工具行`);
+}
+
 /** Inject the tested Electron 37 / Node ABI v138 better-sqlite3 package. */
 function injectBetterSqlite3() {
   if (!existsSync(betterSqliteArchive)) {

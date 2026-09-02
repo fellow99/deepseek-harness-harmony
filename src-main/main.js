@@ -173,6 +173,64 @@ const DSH_CLI_LIB = () => join(DSH_ROOT, 'lib');
 const DSH_APP_BOOT_LIB = () => join(DSH_ROOT, 'node_modules', '@deepseek-ai', 'dsh-app-boot', 'lib', 'index.js');
 const DESKTOP_PROFILE_SRC = () => join(DSH_ROOT, 'profiles', 'desktop');
 
+/**
+ * HarmonyOS 运行时补丁：禁用 agent preset 中依赖 shell/subprocess/pty（node-pty 原生模块，MVP
+ * 已禁用）的工具行。agent preset 由 cordis Include 在会话创建时直接组合成独立 EntryTree，host 的
+ * cordis.patch.yml 管不到；这些工具行会无限等待被禁的 shell/subprocess 服务，导致 preset 挂载失败、
+ * session.create 报 agent-preset-invalid（工作区选不中、点聊天反复弹「选择工作区」）。preset 审计
+ * inactiveRows 会跳过 disabled: true 的行，禁用后 preset 可正常挂载。幂等：已禁用则不重复改写。
+ */
+const HARMONY_DISABLED_PRESET_ROWS = {
+  'tool-bash': 'bash 终端依赖 shell/node-pty（MVP 已禁用）',
+  'tool-fs-search': '内容搜索依赖 subprocess 跑 ripgrep（node-pty 已禁用）',
+  'persistent-shell': '持久 shell 依赖 pty（node-pty 已禁用）',
+};
+
+function patchAgentPresetsRuntime() {
+  const { readdirSync: rd, existsSync: ex, readFileSync: rf, writeFileSync: wf } = require('node:fs');
+  const presetsDir = join(DSH_ROOT, 'config', 'agent-presets');
+  if (!ex(presetsDir)) return;
+  let total = 0;
+  for (const name of rd(presetsDir)) {
+    const file = join(presetsDir, name, 'agent.cordis.yml');
+    if (!ex(file)) continue;
+    const lines = rf(file, 'utf8').split('\n');
+    const out = [];
+    let changed = false;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      out.push(line);
+      const m = /^- id: ([A-Za-z0-9_-]+)\s*$/.exec(line);
+      const reason = m ? HARMONY_DISABLED_PRESET_ROWS[m[1]] : undefined;
+      if (reason === undefined) continue;
+      // 收集该顶层 row 的 2 空格缩进行（4 空格 config 嵌套内容不计入）。
+      const block = [];
+      let j = i + 1;
+      while (j < lines.length && /^  \S/.test(lines[j])) { block.push(lines[j]); j++; }
+      const hasDisabled = block.some(b => /^  disabled:/.test(b));
+      let inserted = false;
+      for (const b of block) {
+        if (/^  disabled:/.test(b)) {
+          out.push(`  disabled: true # HarmonyOS: ${reason}`);
+          changed = true; total++;
+        } else {
+          out.push(b);
+          if (!hasDisabled && !inserted && /^  name:/.test(b)) {
+            out.push(`  disabled: true # HarmonyOS: ${reason}`);
+            inserted = true; changed = true; total++;
+          }
+        }
+      }
+      i = j - 1;
+    }
+    if (changed) {
+      wf(file, out.join('\n'));
+      console.log('[dsh-harmony] preset ' + name + ' 已禁用鸿蒙不可用的终端/搜索工具行');
+    }
+  }
+  if (total > 0) console.log('[dsh-harmony] agent preset 运行时补丁完成，禁用', total, '个工具行');
+}
+
 /** 在 dsh CLI lib 中定位 profile-boot 薄入口（re-export runProfile）。 */
 function findProfileBootEntry() {
   try {
@@ -277,6 +335,9 @@ async function startHost() {
   ensureDesktopProfile(process.env.DSH_HOME);
   ensureDshMarketProfileLink(process.env.DSH_HOME);
   process.env.DSH_DISABLE_HMR = '1';
+  // 禁用 agent preset 中依赖 shell/subprocess/pty 的工具行（node-pty MVP 已禁用），
+  // 否则 standard preset 挂载失败 → session.create 报 agent-preset-invalid → 无法选中工作区/开会话。
+  patchAgentPresetsRuntime();
 
   try {
     const profileBoot = await import(pathToFileURL(entry).href);
