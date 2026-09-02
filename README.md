@@ -57,7 +57,7 @@ dsh-dist 在 Windows 上收集，`sharp`/`node-pty`/`koffi` 二进制为 win32-x
 | 图片附件校验/缩略图 | sharp（libvips） | ⚠️ 纯 JS stub（no-op） |
 | 终端（bash 工具） | node-pty | ❌ 禁用 |
 | 进程沙箱 | koffi（landlock） | ❌ 禁用 |
-| 会话持久化 / 全文搜索 | node:sqlite | ✅ 正常（Node 22 内建） |
+| 会话持久化 / 全文搜索 | better-sqlite3（Electron 37 / Node ABI v138，OpenHarmony aarch64 成品） | ✅ 正常（由 collect-dsh 注入） |
 
 恢复完整能力需按 HarmonyOS aarch64 工具链交叉编译原生模块（`clang --target=aarch64-linux-ohos` + node 头文件 + `libshim.a`），详见 `docs/工程规划.md` §18.5。
 

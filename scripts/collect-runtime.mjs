@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 
 const harmonyRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const runtimeRoot = resolve(harmonyRoot, '../harmonypc-electron/ohos_hap');
+const sdkRoot = process.env.DEVECO_SDK_HOME;
 
 const EXCLUDE_TOP = new Set(['build', 'oh_modules', 'node_modules', '.git', '.hvigor', '.idea', '.codegraph']);
 
@@ -53,4 +54,26 @@ if (missing.length > 0) {
 for (const m of ['electron', 'web_engine']) {
   copyModule(m);
 }
+
+const mainSource = resolve(harmonyRoot, 'src-main/main.js');
+const mainDestination = resolve(harmonyRoot, 'web_engine/src/main/resources/resfile/resources/app/main.js');
+if (!existsSync(mainSource)) {
+  console.error(`[collect-runtime] 本工程主进程入口缺失: ${mainSource}`);
+  process.exit(1);
+}
+cpSync(mainSource, mainDestination, { force: true });
+console.log(`[collect-runtime] 已恢复本工程 main.js -> ${mainDestination}`);
+
+if (!sdkRoot) {
+  console.error('[collect-runtime] DEVECO_SDK_HOME 未设置，无法注入 better-sqlite3 所需 libc++_shared.so');
+  process.exit(1);
+}
+const libcxx = resolve(sdkRoot, 'default/openharmony/native/llvm/lib/aarch64-linux-ohos/libc++_shared.so');
+if (!existsSync(libcxx)) {
+  console.error(`[collect-runtime] libc++_shared.so 缺失: ${libcxx}`);
+  process.exit(1);
+}
+const targetLibcxx = resolve(harmonyRoot, 'electron/libs/arm64-v8a/libc++_shared.so');
+cpSync(libcxx, targetLibcxx, { force: true });
+console.log(`[collect-runtime] 已 copy libc++_shared.so -> ${targetLibcxx}`);
 console.log('[collect-runtime] 完成：electron + web_engine 模块已就绪');

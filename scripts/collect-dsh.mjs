@@ -12,13 +12,14 @@
  * （如 cordis-plugin-group、大量 packages 下插件）；② 非 hoisted 的外部依赖（如 zod）。
  */
 import { execSync } from 'node:child_process';
-import { cpSync, existsSync, lstatSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, lstatSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const dshRoot = resolve(projectRoot, '../deepseek-harness');
 const distDir = resolve(projectRoot, 'dsh-dist');
+const betterSqliteArchive = resolve(projectRoot, '../harmonypc-electron/better-sqlite3编译指导（Electron37）/better-sqlite3-ohos-v138.tar.gz');
 
 function run(cmd, cwd) {
   console.log(`\n> ${cmd}`);
@@ -272,6 +273,29 @@ function applySharpStub() {
   console.log('[collect-dsh] sharp 纯 JS stub 已写入 node_modules/sharp/dist');
 }
 
+/** Inject the tested Electron 37 / Node ABI v138 better-sqlite3 package. */
+function injectBetterSqlite3() {
+  if (!existsSync(betterSqliteArchive)) {
+    console.error(`[collect-dsh] better-sqlite3 v138 成品缺失: ${betterSqliteArchive}`);
+    process.exit(1);
+  }
+  const tempRoot = mkdtempSync(resolve(projectRoot, '.better-sqlite3-'));
+  try {
+    run(`tar -xzf "${betterSqliteArchive}" -C "${tempRoot}"`, projectRoot);
+    const source = resolve(tempRoot, 'better-sqlite3');
+    const destination = resolve(distDir, 'node_modules/better-sqlite3');
+    if (!existsSync(resolve(source, 'package.json')) || !existsSync(resolve(source, 'build/Release/better_sqlite3.node'))) {
+      console.error(`[collect-dsh] better-sqlite3 v138 成品结构无效: ${source}`);
+      process.exit(1);
+    }
+    rmSync(destination, { recursive: true, force: true });
+    cpSync(source, destination, { recursive: true, dereference: true });
+    console.log('[collect-dsh] better-sqlite3 v138 aarch64 成品已注入 dsh-dist');
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
 // 0. 校验
 if (!existsSync(dshRoot)) {
   console.error(`[collect-dsh] dsh 未找到: ${dshRoot}`);
@@ -311,6 +335,9 @@ pruneForeignPrebuilds(join(distDir, 'node_modules'));
 
 // 6c. 写 sharp 纯 JS stub（libvips 在鸿蒙 aarch64 不可用）
 applySharpStub();
+
+// 6d. 注入 better-sqlite3 v138（Windows 不安装 native addon，部署包使用 OpenHarmony aarch64 成品）
+injectBetterSqlite3();
 
 // 7. 复制 web dist（pnpm deploy 不物化 build 产物，frontend-static 经
 //    require.resolve('@deepseek-ai/dsh-web-frontend/dist/index.html') 定位）
