@@ -1,173 +1,177 @@
-# DeepSeek Harness HarmonyOS 桌面版
-
-> 基于「Electron-on-鸿蒙」运行时（[harmonypc-electron](https://atomgit.com/jianguoxu/harmonypc-electron)，Electron 37 / Node 22.17.0）的 [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) 桌面封装——在鸿蒙设备的 Electron 主进程内跑 dsh Host（含 webserver），渲染进程同源加载 dsh Web UI，界面 100% 复用 dsh Web UI。
-
-**状态**：✅ 已真机验证——HarmonyOS 6.1.0.135（API 24），Electron 37 / Node 22.17.0，dsh Web UI 正常运行（核心聊天 / agent / 工具调用 / Web UI 全部可用）。完整工程规划与最终实现记录见 [docs/工程规划.md](docs/工程规划.md)。
+[中文](./README_zh.md) | English
 
 ---
 
-## 这是什么
+# DeepSeek Harness HarmonyOS Desktop
 
-DeepSeek Harness（`dsh`）是 DeepSeek AI 开源的 agent harness，基于「一切皆插件」架构（由 [Cordis](https://github.com/cordiverse/cordis) 驱动），原生入口是 `dsh web`（浏览器 Web UI）。
+> A HarmonyOS desktop wrapper for [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) built on the "Electron-on-HarmonyOS" runtime ([harmonypc-electron](https://atomgit.com/jianguoxu/harmonypc-electron), Electron 37 / Node 22.17.0) — runs the dsh Host (with webserver) inside the Electron main process on HarmonyOS devices, and the renderer loads the dsh Web UI same-origin, 100% reusing the dsh Web UI.
 
-本工程把 dsh Web UI 封装进鸿蒙原生桌面壳（Electron-on-鸿蒙运行时），100% 复用 dsh 前端，让 agent harness 在鸿蒙设备上像一等公民桌面应用一样运行。它**不是**「包一层 `dsh web` 指向 localhost」的粗壳，而是构建在 dsh 现有架构之上、对标 `deepseek-harness-desktop` 的一等公民桌面应用。
+**Status**: ✅ Verified on device — HarmonyOS 6.1.0.135 (API 24), Electron 37 / Node 22.17.0, dsh Web UI runs normally (core chat / agent / tool calling / Web UI all functional). See [docs/工程规划.md](docs/工程规划.md) for the full engineering plan and final implementation record.
 
-## 核心设计
+---
 
-dsh 已完成 **Host/Client 分层**，其 webserver **同时服务 SPA dist 与 `/api`**。本工程因此采用**进程内 Host + webserver + 同源数据面**：
+## What is this
+
+DeepSeek Harness (`dsh`) is an open-source agent harness by DeepSeek AI, built on an "everything is a plugin" architecture (driven by [Cordis](https://github.com/cordiverse/cordis)); its native entry is `dsh web` (a browser Web UI).
+
+This project wraps the dsh Web UI in a native HarmonyOS desktop shell (Electron-on-HarmonyOS runtime), 100% reusing the dsh frontend, making the agent harness run like a first-class desktop app on HarmonyOS devices. It is **not** a thin "wrap `dsh web` pointing at localhost" shell, but a first-class desktop app built on dsh's existing architecture, benchmarked against `deepseek-harness-desktop`.
+
+## Core design
+
+`dsh` has completed its **Host/Client split**, and its webserver **serves both the SPA dist and `/api`**. This project therefore uses an **in-process Host + webserver + same-origin data plane**:
 
 ```
-┌─ 鸿蒙 HAP ──────────────────────────────────────────────────────┐
-│  electron 模块（entry）：EntryAbility 启动 Electron-on-鸿蒙运行时 │
-│  web_engine 模块（HAR）：ArkTS 桥接层 + resfile 承载 dsh 产物     │
-│         ┌─ Electron 主进程（Node.js，承载 dsh Host）────────────┐│
-│         │  main.js: 解压 dsh-dist.tar.gz → runProfile('desktop')││
-│         │    ├─ webserver ← 0.0.0.0:<空闲端口>，服务 dist + /api ││
-│         │    ├─ apiProxy  ← RPC 网关                            ││
-│         │    └─ connection ← /api + WebSocket 注册              ││
-│         │  就绪后 loadURL(http://<局域网 IP>:<port>/)            ││
-│         └────────────────────▲─────────────────────────────────┘│
-│                              │ 同源（无 CORS/鉴权）+ Host 头改写  │
-│         ┌────────────────────┴─────────────────────────────────┐│
-│         │ 渲染进程：loadURL(局域网 IP) ← 同源                    ││
-│         │   标准 dsh Web UI（WebApiClient：fetch /api + WS 事件）││
-│         └──────────────────────────────────────────────────────┘│
-└──────────────────────────────────────────────────────────────────┘
+┌─ HarmonyOS HAP ─────────────────────────────────────────────────┐
+│  electron module (entry): EntryAbility boots Electron-on-HarmonyOS│
+│  web_engine module (HAR): ArkTS bridge layer + resfile carries dsh│
+│         ┌─ Electron main process (Node.js, also hosts dsh Host)─┐│
+│         │  main.js: extract dsh-dist.tar.gz → runProfile('desktop')│
+│         │    ├─ webserver ← 0.0.0.0:<free port>, serves dist+/api│
+│         │    ├─ apiProxy  ← RPC gateway                         │
+│         │    └─ connection ← /api + WebSocket registration      │
+│         │  once ready: loadURL(http://<LAN IP>:<port>/)         │
+│         └────────────────────▲──────────────────────────────────┘│
+│                              │ same-origin (no CORS/auth) + Host header rewrite│
+│         ┌────────────────────┴──────────────────────────────────┐│
+│         │ Renderer: loadURL(LAN IP) ← same-origin               ││
+│         │   standard dsh Web UI (WebApiClient: fetch /api + WS) ││
+│         └───────────────────────────────────────────────────────┘│
+└───────────────────────────────────────────────────────────────────┘
 ```
 
-关键点：**渲染进程同源加载——零 CORS、零鉴权、零自定义协议、零 IPC 载体**——复用 dsh 现有 `WebApiClient`（HTTP 上行 + WebSocket 下行），**对 dsh 零上游改动**（仅 4 个 patch）。
+Key point: **the renderer loads same-origin — zero CORS, zero auth, zero custom protocol, zero IPC carrier** — reusing dsh's existing `WebApiClient` (HTTP uplink + WebSocket downlink), **zero upstream changes** (only 4 patches).
 
-**与 desktop 的差异**（鸿蒙独有适配，详见 `docs/工程规划.md` §18）：
+**Differences from desktop** (HarmonyOS-specific adaptations, see `docs/工程规划.md` §18):
 
-- 鸿蒙 NEXT 下渲染进程访问 `127.0.0.1` 存在 **loopback 网络隔离** → webserver 绑 `0.0.0.0`、渲染进程走局域网 IP 建连，并在内嵌渲染进程请求出栈前把 `Host`/`Origin` 改写为 `127.0.0.1:<port>` 以通过 dsh 的 loopback-only 特权方法围栏（安全语义不变，局域网其他设备仍 403）。
-- 鸿蒙沙箱禁 symlink（`EACCES`）→ dsh profile 回退 `cpSync` 递归拷贝（patch）。
-- 鸿蒙沙箱中 `os.homedir()` 返回沙箱外目录（`EPERM`）→ 主进程启动前把 `HOME` 指向沙箱可写目录 `userData`。
+- HarmonyOS NEXT isolates renderer access to `127.0.0.1` (**loopback network isolation**) → webserver binds `0.0.0.0` and the renderer connects via the LAN IP, with the embedded renderer's outgoing requests rewriting `Host`/`Origin` to `127.0.0.1:<port>` before they leave the session, so dsh's loopback-only privileged-method fence passes (security semantics unchanged — other LAN devices still get 403).
+- HarmonyOS sandbox forbids symlink (`EACCES`) → dsh profile falls back to `cpSync` recursive copy (patch).
+- `os.homedir()` returns an out-of-sandbox directory (`EPERM`) → the main process points `HOME` at the sandbox-writable `userData` directory before startup.
 
-## MVP 能力
+## MVP capabilities
 
-- ✅ dsh Web UI 在窗口内运行（100% 复用 dsh 前端）
-- ✅ 会话持久化 / 全文搜索（better-sqlite3，Electron 37 / Node ABI v138 aarch64 成品，由 collect-dsh 注入）
-- ✅ 插件市场（dsh-market 内置）
-- ⚠️ 图片附件校验/缩略图（sharp 纯 JS stub，no-op）
-- ❌ 终端（bash 工具，node-pty 无 aarch64 产物）
-- ❌ 进程沙箱（koffi / landlock）
+- ✅ dsh Web UI runs in a window (100% reuses dsh frontend)
+- ✅ Session persistence / full-text search (better-sqlite3, Electron 37 / Node ABI v138 aarch64 artifact, injected by collect-dsh)
+- ✅ Plugin marketplace (dsh-market built-in)
+- ⚠️ Image attachment validation/thumbnails (sharp pure-JS stub, no-op)
+- ❌ Terminal (bash tool, node-pty has no aarch64 artifact)
+- ❌ Process sandbox (koffi / landlock)
 
-（二期：系统托盘、无边框窗口、开机自启；原生文件选择器复用 dsh 标准前端目录浏览）
+(Phase 2: system tray, frameless window, launch at login; native file picker reuses dsh's standard frontend directory browser)
 
-## 目标平台与分发
+## Target platforms & distribution
 
-- **平台**：HarmonyOS 2in1 / tablet（`deviceTypes: ["2in1", "tablet"]`）
-- **分发**：本地签名 HAP 自用（DevEco 自动签名 + 华为证书）；暂无商店分发、自动更新、代码签名
+- **Platforms**: HarmonyOS 2in1 / tablet (`deviceTypes: ["2in1", "tablet"]`)
+- **Distribution**: local signed HAP for personal use (DevEco auto-signing + Huawei cert); no store distribution, auto-update, or code signing yet
 
-## 技术栈
+## Tech stack
 
-- **Electron-on-鸿蒙**（harmonypc-electron，Electron 37 / Node 22.17.0）—— 原生 SO + ArkTS 桥接层（aki / adapter / addon + libshim.a）
-- **ArkTS / ArkUI**（Stage 模型，`web_engine` HAR 桥接：~46 Adapter + ~44 AdapterBind）
-- **deepseek-harness**（同级目录 `../deepseek-harness`，非 submodule，源码引用；patch 基线 `dsh-v0.1.0-rc.7`）
-- **dsh-market**（同级目录 `../dsh-market`，npm 包 `dshmarket`，内置插件市场）
-- **hvigor / DevEco Studio**（HAP 构建 + 签名）
+- **Electron-on-HarmonyOS** (harmonypc-electron, Electron 37 / Node 22.17.0) — native SO + ArkTS bridge layer (aki / adapter / addon + libshim.a)
+- **ArkTS / ArkUI** (Stage model, `web_engine` HAR bridge: ~46 Adapters + ~44 AdapterBinds)
+- **deepseek-harness** (sibling directory `../deepseek-harness`, not a submodule, source reference; patch baseline `dsh-v0.1.0-rc.7`)
+- **dsh-market** (sibling directory `../dsh-market`, npm package `dshmarket`, built-in plugin marketplace)
+- **hvigor / DevEco Studio** (HAP build + signing)
 
-## 开发
+## Development
 
-### 集成方式
+### Integration approach
 
-- **运行时 copy**：`harmonypc-electron` 为同级鸿蒙工程（非 npm 包），构建期 `collect-runtime.mjs` 把其 `electron` + `web_engine` 模块 + 3 个 SO 物理 copy 进本工程（sibling 存放、产物内嵌），并注入 `libc++_shared.so`。
-- **源码引用**：dsh 与 dsh-market 为同级目录源码引用（非 submodule），构建期 patch + build + 收集产物。
-- **Host 集成**：`src-main/main.js` 动态 import dsh 的 `runProfile`（`apps/cli` 构建产物），进程内挂起 dsh Host（webserver 绑 `0.0.0.0`），返回 `{ ctx, shutdown, port, url }` 句柄。
-- **同源数据面**：渲染进程 `loadURL(http://<局域网 IP>:<port>/)` 同源加载 dsh Web UI，复用 `WebApiClient`——零 CORS、零鉴权、零新载体。
-- **desktop profile**：`profiles/desktop/`（`dsh.profile.bundles = [dsh-base, dsh-web-app, dshmarket]`，cordis.patch.yml 覆盖 `web-runtime.printUrl: false`、`webserver.host: 0.0.0.0`），运行时复制到 `$DSH_HOME/profiles/desktop`。
+- **Runtime copy**: `harmonypc-electron` is a sibling HarmonyOS project (not an npm package); `collect-runtime.mjs` physically copies its `electron` + `web_engine` modules + 3 SOs into this project at build time (sibling layout, artifact embedding), and injects `libc++_shared.so`.
+- **Source reference**: dsh and dsh-market are sibling-directory source references (not submodules), consumed via patch + build + artifact collection.
+- **Host integration**: `src-main/main.js` dynamically imports dsh's `runProfile` (apps/cli build artifact), hosting the dsh Host in-process (webserver bound to `0.0.0.0`), returning a `{ ctx, shutdown, port, url }` handle.
+- **Same-origin data plane**: the renderer does `loadURL(http://<LAN IP>:<port>/)` to load the dsh Web UI same-origin, reusing `WebApiClient` — zero CORS, zero auth, zero new carrier.
+- **desktop profile**: `profiles/desktop/` (`dsh.profile.bundles = [dsh-base, dsh-web-app, dshmarket]`, cordis.patch.yml overriding `web-runtime.printUrl: false`, `webserver.host: 0.0.0.0`), copied to `$DSH_HOME/profiles/desktop` at runtime.
 
-### 构建流程（三阶段 + 4 个 patch）
+### Build process (three stages + 4 patches)
 
-dsh 依赖的 Node 内建 API（HMR、原生目录对话框）与鸿蒙沙箱（symlink、loopback 隔离）冲突，需先应用 4 个 patch（幂等——`--reverse --check` 检测已应用则跳过）：
+dsh depends on Node internal APIs (HMR, native directory dialog) and conflicts with the HarmonyOS sandbox (symlink, loopback isolation), so 4 patches must be applied first (idempotent — `--reverse --check` detects already-applied and skips):
 
 ```bash
-# ① 收集运行时：copy ../harmonypc-electron 的 electron + web_engine 模块 + 3 个 SO + libc++_shared.so
+# ① collect runtime: copy ../harmonypc-electron's electron + web_engine modules + 3 SOs + libc++_shared.so
 node scripts/collect-runtime.mjs
 
-# ② 构建 dsh：清理 workspace 残留 → apply 4 patch → pnpm build host/client/web → build ../dsh-market
+# ② build dsh: clean workspace residue → apply 4 patches → pnpm build host/client/web → build ../dsh-market
 node scripts/build-dsh.mjs
 
-# ③ 收集 dsh 产物：pnpm deploy 物化 → 补包 → sharp stub → better-sqlite3 注入 → web dist + profile + dshmarket
+# ③ collect dsh artifacts: pnpm deploy materialize → fill packages → sharp stub → better-sqlite3 injection → web dist + profile + dshmarket
 node scripts/collect-dsh.mjs
 
-# ④ 压缩 dsh-dist 为 dsh-dist.tar.gz（--format=ustar，~143MB，运行时流式解压）
+# ④ compress dsh-dist into dsh-dist.tar.gz (--format=ustar, ~143MB, streaming decompression at runtime)
 tar -czf web_engine/src/main/resources/resfile/resources/app/dsh-dist.tar.gz --format=ustar -C . dsh-dist
 
-# ⑤ 构建 + 签名 HAP（DevEco Studio 或命令行 hvigor）
+# ⑤ build + sign HAP (DevEco Studio or hvigor CLI)
 #    NODE_HOME=<DevEco>/tools/node DEVECO_SDK_HOME=<sdk>  ohpm install  hvigorw assembleHap --mode module -p product=default -p buildMode=debug --no-daemon
 ```
 
-| Patch | 目的 |
+| Patch | Purpose |
 |---|---|
-| `patches/dsh-symlink-to-copy.patch` | 鸿蒙沙箱禁 symlink（`EACCES`）→ 回退 `cpSync` 递归拷贝 |
-| `patches/dsh-allow-all-interfaces.patch` | 移除 webserver `--host 0.0.0.0` 拒绝检查（loopback 隔离需绑全网卡 + 局域网 IP） |
-| `patches/dsh-disable-hmr.patch` | `DSH_DISABLE_HMR` 开关，跳过依赖 `--expose-internals` 的 watch-only HMR |
-| `patches/dsh-disable-native-picker.patch` | 目录选择器走 browse（原生 dialog worker 在 Electron 下 spawn 失败） |
+| `patches/dsh-symlink-to-copy.patch` | HarmonyOS sandbox forbids symlink (`EACCES`) → fall back to `cpSync` recursive copy |
+| `patches/dsh-allow-all-interfaces.patch` | Remove webserver's `--host 0.0.0.0` rejection check (loopback isolation requires binding all interfaces + LAN IP) |
+| `patches/dsh-disable-hmr.patch` | Add `DSH_DISABLE_HMR` switch, skipping watch-only HMR (HMR depends on `--expose-internals`) |
+| `patches/dsh-disable-native-picker.patch` | Force directory-picker to use browse (native dialog worker fails to spawn under Electron) |
 
-**前置——同级工程 checkout**：本工程消费 3 个同级工程（非 submodule），构建前需放到同级目录：
+**Prerequisite — sibling source checkouts.** This project consumes 3 sibling projects (not submodules); clone them next to this project before building:
 
 ```bash
 git clone --branch dsh-v0.1.0-rc.7 https://github.com/deepseek-ai/deepseek-harness.git ../deepseek-harness
 git clone --branch v1.26.0           https://github.com/dsh-market/dsh-market.git       ../dsh-market
-# ../harmonypc-electron 为 Electron-on-鸿蒙运行时工程，需解压 Electron 37 编译产物补齐 3 个 SO
+# ../harmonypc-electron is the Electron-on-HarmonyOS runtime project; extract the Electron 37 build artifacts to supply the 3 SOs
 ```
 
-`collect-runtime.mjs` 校验 3 个 SO（`libelectron.so`/`libadapter.so`/`libffmpeg.so`）缺失即报错；`collect-dsh.mjs` 在 `../dsh-market` 缺失时硬失败（打包产物内置 `dsh-dist/node_modules/dshmarket`）。
+`collect-runtime.mjs` validates the 3 SOs (`libelectron.so`/`libadapter.so`/`libffmpeg.so`) and errors if any is missing; `collect-dsh.mjs` hard-fails if `../dsh-market` is missing (the packaged app bundles it as `dsh-dist/node_modules/dshmarket`).
 
-### 运行
+### Run
 
 ```bash
-hdc uninstall com.huawei.ohos_electron   # 首装/换产物需先卸载，清掉旧 userData 中过期 dsh-dist
+hdc uninstall com.huawei.ohos_electron   # uninstall first on fresh install / artifact change, to clear stale dsh-dist in userData
 hdc app install -r electron/build/default/outputs/default/electron-default-signed.hap
 hdc shell aa start -a EntryAbility -b com.huawei.ohos_electron
 ```
 
-> 环境要求：DevEco Studio 4.0+、HarmonyOS SDK API 17+（targetSdk 6.1.1(24)）、Node 18+、pnpm@11、HDC。
+> Requirements: DevEco Studio 4.0+, HarmonyOS SDK API 17+ (targetSdk 6.1.1(24)), Node 18+, pnpm@11, HDC.
 
-## 目录结构
+## Directory structure
 
-本工程与 3 个被消费工程、1 个架构参考工程**同级目录**存放（非 submodule）：
+This project and the 3 consumed projects plus 1 architecture-reference project live in **sibling directories** (not submodules):
 
 ```
-（同级目录）
-├── deepseek-harness-harmony/      # 本工程（鸿蒙 HAP，桌面版鸿蒙移植）
-│   ├── AppScope/                  # 应用 scope（图标/名称/签名）
-│   ├── electron/                  # 入口模块（copy 自 harmonypc-electron，含 SO）
-│   ├── web_engine/                # 桥接 HAR（ArkTS 桥接层 + resfile 承载 dsh 产物）
-│   ├── src-main/                  # 主进程 main.js（解压 + runProfile + loadURL + 鸿蒙适配）
-│   ├── scripts/                   # 三阶段构建：collect-runtime → build-dsh → collect-dsh
-│   ├── profiles/desktop/          # 自定义 desktop profile（cordis.patch.yml + package.json）
-│   ├── patches/                   # dsh 上游 patch（4 个）
-│   ├── docs/                      # 工程规划与最终实现记录
-│   └── specs/                     # 规范文档（as-built；见 specs/README.md 索引）
+(sibling directories)
+├── deepseek-harness-harmony/      # This project (HarmonyOS HAP, HarmonyOS desktop port)
+│   ├── AppScope/                  # App scope (icon/name/signing)
+│   ├── electron/                  # Entry module (copied from harmonypc-electron, contains SOs)
+│   ├── web_engine/                # Bridge HAR (ArkTS bridge layer + resfile carries dsh artifacts)
+│   ├── src-main/                  # Main process main.js (extract + runProfile + loadURL + HarmonyOS adaptations)
+│   ├── scripts/                   # Three-stage build: collect-runtime → build-dsh → collect-dsh
+│   ├── profiles/desktop/          # Custom desktop profile (cordis.patch.yml + package.json)
+│   ├── patches/                   # dsh upstream patches (4)
+│   ├── docs/                      # Engineering plan and final implementation record
+│   └── specs/                     # Spec documents (as-built; see specs/README.md for index)
 │
-├── harmonypc-electron/            # Electron-on-鸿蒙运行时（Electron 37 / Node 22.17.0）
-│   └── ohos_hap/                  # electron + web_engine 模块 + SO 源（collect-runtime copy 源）
+├── harmonypc-electron/            # Electron-on-HarmonyOS runtime (Electron 37 / Node 22.17.0)
+│   └── ohos_hap/                  # electron + web_engine modules + SO source (collect-runtime copy source)
 │
-├── deepseek-harness/              # 被封装宿主（dsh，源码引用，非 submodule）
-│   ├── apps/                      # cli（dsh bin / profile-boot）、web（前端，build:web 产 dist）
-│   ├── packages/                  # host / client / core / session 等 workspace 包
-│   ├── vendor/                    # vendored cordis 框架包（cordis / loader / hmr / …）
-│   └── native/                    # landlock-run 原生模块（Linux 沙箱，MVP 裁掉）
+├── deepseek-harness/              # The wrapped host (dsh, source reference, not a submodule)
+│   ├── apps/                      # cli (dsh bin / profile-boot), web (frontend, build:web produces dist)
+│   ├── packages/                  # host / client / core / session workspace packages
+│   ├── vendor/                    # vendored cordis framework packages (cordis / loader / hmr / …)
+│   └── native/                    # landlock-run native module (Linux sandbox, cut in MVP)
 │
-└── dsh-market/                    # 插件市场（源码引用，npm 包 dshmarket）
-    ├── src/                       # host 半（挂 /dsh-market/* 路由）
-    ├── client/                    # 浏览器半（设置页 UI）
-    ├── lib/                       # 编译产物（物化进 dsh-dist/node_modules/dshmarket）
-    └── cordis.patch.yml           # loader insert 声明（{ id: dsh-market, name: dshmarket }）
+└── dsh-market/                    # Plugin marketplace (source reference, npm pkg "dshmarket")
+    ├── src/                       # host half (mounts /dsh-market/* routes)
+    ├── client/                    # browser half (settings-page UI)
+    ├── lib/                       # compiled host output (materialized into dsh-dist/node_modules/dshmarket)
+    └── cordis.patch.yml           # loader insert declaration ({ id: dsh-market, name: dshmarket })
 ```
 
-> `../deepseek-harness-desktop` 为**架构设计参考**（复用其架构决策 + patch + 主进程编排逻辑），不参与本工程构建/打包。
+> `../deepseek-harness-desktop` is an **architecture-design reference** (reuses its architecture decisions + patches + main-process orchestration logic) and does not participate in this project's build/packaging.
 
-## 相关文档
+## Related docs
 
-- [docs/工程规划.md](docs/工程规划.md) — 完整工程规划 + 最终实现记录（Electron 37 落地、关键适配改动、MVP 取舍、交叉编译优化路径）
-- [specs/README.md](specs/README.md) — 规范文档索引（项目级 + 9 模块 spec/plan，as-built）
+- [docs/工程规划.md](docs/工程规划.md) — full engineering plan + final implementation record (Electron 37 landing, key adaptation changes, MVP trade-offs, cross-compilation optimization path)
+- [specs/README.md](specs/README.md) — spec document index (project-level + 9 module spec/plan, as-built)
 
-## 参考资料
+## References
 
-- [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)（同级目录 `../deepseek-harness`）—— 被封装宿主；其 `docs/` 目录含完整架构文档
-- [dsh-market](https://github.com/dsh-market/dsh-market)（同级目录 `../dsh-market`）—— 内置插件市场（npm 包 `dshmarket`），经 `collect-dsh.mjs` 物化
-- [harmonypc-electron](https://atomgit.com/jianguoxu/harmonypc-electron)（同级目录 `../harmonypc-electron`）—— Electron-on-鸿蒙运行时
-- [deepseek-harness-desktop](https://github.com/fellow99/deepseek-harness-desktop)（同级目录 `../deepseek-harness-desktop`）—— 架构设计参考（Electron 桌面壳）
+- [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) (sibling directory `../deepseek-harness`) — the wrapped host; its `docs/` directory contains full architecture docs
+- [dsh-market](https://github.com/dsh-market/dsh-market) (sibling directory `../dsh-market`) — the built-in visual plugin marketplace (npm package `dshmarket`), materialized via `collect-dsh.mjs`
+- [harmonypc-electron](https://atomgit.com/jianguoxu/harmonypc-electron) (sibling directory `../harmonypc-electron`) — the Electron-on-HarmonyOS runtime
+- [deepseek-harness-desktop](https://github.com/fellow99/deepseek-harness-desktop) (sibling directory `../deepseek-harness-desktop`) — architecture-design reference (Electron desktop shell)
