@@ -1,0 +1,13 @@
+{
+  "_说明": "复制本文件为 signing.local.json 并填入真实值。signing.local.json 已被 gitignore。",
+  "_路径": "certpath/storeFile/profile 写相对工程根目录的路径（指向 .ohos/config/ 下的材料），或写绝对路径。",
+  "_密码": "keyPassword/storePassword 必须是 hvigor DecipherUtil 的 AES-GCM 密文（≥32位 hex，非明文）；且 .p12 同级目录需有 material/{fd,ac,ce} 密钥链。",
+  "_获取": "在 DevEco Studio 的 File → Project Structure → Signing Configs 勾选 Automatically generate signature 后，从生成的签名材料/构建配置中取得这些值。",
+  "certpath": ".ohos/config/default_deepseek-harness-harmony_xxx=.cer",
+  "storeFile": ".ohos/config/default_deepseek-harness-harmony_xxx=.p12",
+  "profile": ".ohos/config/default_deepseek-harness-harmony_xxx=.p7b",
+  "keyAlias": "debugKey",
+  "keyPassword": "<AES-GCM 密文 hex>",
+  "storePassword": "<AES-GCM 密文 hex>",
+  "signAlg": "SHA256withECDSA"
+}

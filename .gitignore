@@ -19,3 +19,10 @@
 dsh-dist.tar.gz
 *.so
 /electron/libs/
+
+# 签名配置（含密钥/证书路径与密文口令，不入库；样例见 signing.local.json.sample）
+signing.local.json
+!signing.local.json.sample
+
+# 本地签名材料目录（.p12/.cer/.p7b/.csr + material 解密密钥链，绝不入库）
+/.ohos/
