@@ -45,7 +45,7 @@
 - **补丁幂等探测**：`git apply --reverse --check` 若成功说明补丁已应用，跳过；否则正向 `git apply`。比「记录已应用状态」更可靠，无需额外状态文件（FR-005-006）。
 - **workspace 残留根因**：版本切换或 collect/deploy 遗留的空壳目录会被 tsdown 的 `vendor/*` 与 `packages/*/*` glob 匹配，导致 build 报 `dsh-root entry` 失败。真包至少含 `package.json` 或 `src/`，两者皆无的空壳即残留（FR-005-005）。
 - **`collectNonHoistedDeps` 真实包名解析**：`.pnpm` entry 名是截断+hash（如 `@opentelemetry+exporter-log_8841...`），真实包名在 `entry/node_modules/<scope>/<name>` 内，故从嵌套目录提取而非用 entry 名。
-- **better-sqlite3 注入方式**：Windows workspace 不装 native addon（无 aarch64 toolchain），改由 `collect-dsh.mjs` 从 `../harmonypc-electron/better-sqlite3编译指导（Electron37）/better-sqlite3-ohos-v138.tar.gz` 解包注入，归档必须含 `package.json` 与 `build/Release/better_sqlite3.node`（FR-005-015，§18.4.1）。
+- **better-sqlite3 注入方式**：Windows workspace 不装 native addon（无 aarch64 toolchain），改由 `collect-dsh.mjs` 从 `../harmonypc-electron-versions/better-sqlite3编译指导（Electron37）/better-sqlite3-ohos-v138.tar.gz` 解包注入，归档必须含 `package.json` 与 `build/Release/better_sqlite3.node`（FR-005-015，§18.4.1）。
 - **agent preset 补丁为何必须落在 collect 阶段**：preset 由 cordis `Include` 在会话创建时组合成独立 EntryTree，host 的 `cordis.patch.yml` 只覆盖 host-plane，管不到 agent-plane；须直接改写 `config/agent-presets/*/agent.cordis.yml` 的顶层工具行（FR-005-016，§18.7 问题 3）。
 
 ## 4. 数据模型
@@ -60,12 +60,12 @@
 ### 4.2 build-dsh 常量
 
 - `dshRoot = ../deepseek-harness`；`marketRoot = ../dsh-market`。
-- `patchFiles`（4 个，按序）：`patches/dsh-symlink-to-copy.patch`、`patches/dsh-allow-all-interfaces.patch`、`patches/dsh-disable-hmr.patch`、`patches/dsh-disable-native-picker.patch`。
+- `patchFiles`（4 个，按序）：`patches/dsh-v0.1.0-rc.7/dsh-symlink-to-copy.patch`、`patches/dsh-v0.1.0-rc.7/dsh-allow-all-interfaces.patch`、`patches/dsh-v0.1.0-rc.7/dsh-disable-hmr.patch`、`patches/dsh-v0.1.0-rc.7/dsh-disable-native-picker.patch`。
 - 构建命令序列：`pnpm install`（node_modules 缺失时）→ `pnpm run build:lib:host` → `build:lib:client` → `build:web` → dsh-market `npm install` + `npm run build`。
 
 ### 4.3 collect-dsh 常量与产物结构
 
-- `distDir = dsh-dist`（清理后重建）；`betterSqliteArchive = ../harmonypc-electron/better-sqlite3编译指导（Electron37）/better-sqlite3-ohos-v138.tar.gz`。
+- `distDir = dsh-dist`（清理后重建）；`betterSqliteArchive = ../harmonypc-electron-versions/better-sqlite3编译指导（Electron37）/better-sqlite3-ohos-v138.tar.gz`。
 - `HARMONY_DISABLED_PRESET_ROWS = { 'tool-bash', 'tool-fs-search', 'persistent-shell' }`：需禁用的工具行 id → 禁用原因映射。
 - 产物目录 `dsh-dist/`：`node_modules/`（含 `@deepseek-ai/*` + `dshmarket` + 物化后的扁平依赖）、`config/agent-presets/*/agent.cordis.yml`、`profiles/desktop/`、`node_modules/@deepseek-ai/dsh-web-frontend/dist/`。
 - `materializeJunctions`/`pruneForeignPrebuilds` 递归深度上限 `depth > 8` 即返回，防环与爆栈。

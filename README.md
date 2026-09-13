@@ -67,7 +67,7 @@ Key point: **the renderer loads same-origin — zero CORS, zero auth, zero custo
 
 - **Electron-on-HarmonyOS** (harmonypc-electron, Electron 37 / Node 22.17.0) — native SO + ArkTS bridge layer (aki / adapter / addon + libshim.a)
 - **ArkTS / ArkUI** (Stage model, `web_engine` HAR bridge: ~46 Adapters + ~44 AdapterBinds)
-- **deepseek-harness** (sibling directory `../deepseek-harness`, not a submodule, source reference; patch baseline `dsh-v0.1.0-rc.7`)
+- **deepseek-harness** (`dsh`, sibling directory `../deepseek-harness`, not a submodule, source reference) — current build is based on **`dsh-v0.1.0-rc.7`**; its patches live in `patches/dsh-v0.1.0-rc.7/`
 - **dsh-market** (sibling directory `../dsh-market`, npm package `dshmarket`, built-in plugin marketplace)
 - **hvigor / DevEco Studio** (HAP build + signing)
 
@@ -98,16 +98,36 @@ node scripts/collect-dsh.mjs
 # ④ compress dsh-dist into dsh-dist.tar.gz (--format=ustar, ~143MB, streaming decompression at runtime)
 tar -czf web_engine/src/main/resources/resfile/resources/app/dsh-dist.tar.gz --format=ustar -C . dsh-dist
 
-# ⑤ build + sign HAP (DevEco Studio or hvigor CLI)
-#    NODE_HOME=<DevEco>/tools/node DEVECO_SDK_HOME=<sdk>  ohpm install  hvigorw assembleHap --mode module -p product=default -p buildMode=debug --no-daemon
+# ⑤ build + sign HAP (recommended: the project's build-hap.ps1, which uses DevEco's JBR)
+#    powershell -ExecutionPolicy Bypass -File scripts\build-hap.ps1            # debug (default)
+#    powershell -ExecutionPolicy Bypass -File scripts\build-hap.ps1 -BuildMode release
 ```
+
+### Signing (externalized — secrets never committed)
+
+Signing material is **externalized** so `build-profile.json5` stays secret-free and safe to commit:
+
+- **`hvigorfile.ts`** — at `afterNodeEvaluate`, injects `app.signingConfigs` from one of two sources (priority order):
+  1. CI env vars: `CERTPATH` / `STORE_FILE` / `PROFILE` / `KEY_ALIAS` / `KEY_PASSWORD` / `STORE_PASSWORD` / `SIGN_ALG`
+  2. **`signing.local.json`** (gitignored; template: `signing.local.json.sample`) → points at `.ohos/config/` `.p12/.cer/.p7b` + the sibling `material/` decryption keychain
+- **`build-profile.json5`** keeps `"signingConfigs": []` (empty) — no secrets in git.
+- **`scripts/build-hap.ps1`** — CLI build+sign using DevEco's bundled JBR (avoids the Temurin/sdkman JDK 21 `Invalid CEN header` zip64 failure in `hap-sign-tool.jar`).
+
+> `keyPassword` / `storePassword` in `signing.local.json` **must be hvigor DecipherUtil AES-GCM ciphertext** (≥32 hex chars, not plaintext), and the `.p12` directory must contain the `material/{fd,ac,ce}` keychain — otherwise signing fails.
+
+> ⚠️ **Restricted permission `ohos.permission.kernel.ALLOW_WRITABLE_CODE_MEMORY`.** The Electron-on-HarmonyOS runtime needs this `system_basic`-level permission (only 2in1/tablet, `system_grant`). A default DevEco debug profile does **not** grant it, so installing the HAP fails with:
+> `install failed due to grant request permissions failed. PermissionName: ohos.permission.kernel.ALLOW_WRITABLE_CODE_MEMORY`
+>
+> The `.p7b` provisioning profile is signed by Huawei — it **cannot be regenerated locally** (no local profile-signing CA; editing the SDK `Unsigned*ProfileTemplate.json` does not auto-regenerate an existing `.p7b`). Regenerate it in **DevEco Studio → File → Project Structure → Signing Configs**, with the restricted permission requested (ACL cross-level), then re-point `signing.local.json` at the new `.p7b`. See "Signing & restricted permissions" below.
+
+> **dsh version pin.** This project builds against deepseek-harness tag **`dsh-v0.1.0-rc.7`**. Patches are organized per dsh version (`patches/<dsh-tag>/`) and `scripts/build-dsh.mjs` pins `patches/dsh-v0.1.0-rc.7/` — when bumping to a new dsh tag, add a matching `patches/<new-tag>/` directory and update that pin.
 
 | Patch | Purpose |
 |---|---|
-| `patches/dsh-symlink-to-copy.patch` | HarmonyOS sandbox forbids symlink (`EACCES`) → fall back to `cpSync` recursive copy |
-| `patches/dsh-allow-all-interfaces.patch` | Remove webserver's `--host 0.0.0.0` rejection check (loopback isolation requires binding all interfaces + LAN IP) |
-| `patches/dsh-disable-hmr.patch` | Add `DSH_DISABLE_HMR` switch, skipping watch-only HMR (HMR depends on `--expose-internals`) |
-| `patches/dsh-disable-native-picker.patch` | Force directory-picker to use browse (native dialog worker fails to spawn under Electron) |
+| `patches/dsh-v0.1.0-rc.7/dsh-symlink-to-copy.patch` | HarmonyOS sandbox forbids symlink (`EACCES`) → fall back to `cpSync` recursive copy |
+| `patches/dsh-v0.1.0-rc.7/dsh-allow-all-interfaces.patch` | Remove webserver's `--host 0.0.0.0` rejection check (loopback isolation requires binding all interfaces + LAN IP) |
+| `patches/dsh-v0.1.0-rc.7/dsh-disable-hmr.patch` | Add `DSH_DISABLE_HMR` switch, skipping watch-only HMR (HMR depends on `--expose-internals`) |
+| `patches/dsh-v0.1.0-rc.7/dsh-disable-native-picker.patch` | Force directory-picker to use browse (native dialog worker fails to spawn under Electron) |
 
 **Prerequisite — sibling source checkouts.** This project consumes 3 sibling projects (not submodules); clone them next to this project before building:
 
@@ -128,6 +148,60 @@ hdc shell aa start -a EntryAbility -b com.huawei.ohos_electron
 ```
 
 > Requirements: DevEco Studio 4.0+, HarmonyOS SDK API 17+ (targetSdk 6.1.1(24)), Node 18+, pnpm@11, HDC.
+
+### Signing & restricted permissions (full procedure)
+
+The app cannot be installed until the provisioning profile (`.p7b`) grants
+`ohos.permission.kernel.ALLOW_WRITABLE_CODE_MEMORY` (a `system_basic` restricted
+permission, `system_grant`, 2in1/tablet only). Follow this sequence:
+
+**1. Request the restricted permission (DevEco GUI, requires a logged-in Huawei account)**
+
+1. Open the project in DevEco Studio.
+2. `File → Project Structure → Signing Configs`.
+3. Tick **Automatically generate signature** and log in with your Huawei developer account.
+4. DevEco regenerates a debug keystore + provisioning profile under `~/.ohos/config/`
+   (`<bundle>_…=.p12/.cer/.p7b` + `material/` keychain).
+5. Ensure the requested permissions include the restricted one. The module already
+   declares it (`web_engine/src/main/module.json5` → `requestPermissions` + `definePermissions`
+   → `ohos.permission.kernel.ALLOW_WRITABLE_CODE_MEMORY`). For a cross-level (ACL) grant on a
+   `normal`-APL app, DevEco's signing dialog surfaces the restricted permission for approval;
+   accept it so the regenerated `.p7b` carries it in `acls.allowed-acls`.
+
+**2. Point `signing.local.json` at the regenerated material**
+
+Copy `signing.local.json.sample` → `signing.local.json` and fill in the new paths
+(relative to project root is fine):
+
+```json5
+{
+  "certpath":    ".ohos/config/<bundle>_…=.cer",
+  "storeFile":   ".ohos/config/<bundle>_…=.p12",
+  "profile":     ".ohos/config/<bundle>_…=.p7b",
+  "keyAlias":    "debugKey",
+  "keyPassword":  "<AES-GCM ciphertext hex, from the regenerated material>",
+  "storePassword":"<AES-GCM ciphertext hex>",
+  "signAlg":     "SHA256withECDSA"
+}
+```
+
+**3. Build + sign**
+
+```bash
+powershell -ExecutionPolicy Bypass -File scripts\build-hap.ps1                 # debug
+powershell -ExecutionPolicy Bypass -File scripts\build-hap.ps1 -BuildMode release
+```
+
+**4. Install & launch**
+
+```bash
+hdc uninstall org.fellow99.DeepseekHarnessHarmony
+hdc app install -r electron/build/default/outputs/default/electron-default-signed.hap
+hdc shell aa start -a EntryAbility -b org.fellow99.DeepseekHarnessHarmony
+```
+
+> If install still reports a permission grant failure, the `.p7b` does not yet carry the
+> restricted permission — repeat step 1 (confirm the ACL approval) before rebuilding.
 
 ## Directory structure
 

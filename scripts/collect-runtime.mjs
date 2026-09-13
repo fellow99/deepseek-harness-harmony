@@ -1,31 +1,168 @@
 #!/usr/bin/env node
 /**
- * 收集 Electron-on-鸿蒙 运行时：从 ../harmonypc-electron copy electron + web_engine 模块
- * （剔除 build/oh_modules/node_modules/.git 等生成目录）。
+ * 收集 Electron-on-鸿蒙 运行时（009-runtime-shell 重设计版）。
  *
- * 用法：node scripts/collect-runtime.mjs
+ * 固定阶段流水线，任一阶段失败即非零退出：
+ *   0 清单加载与前置校验：读取子工程 ohos_hap/runtime-manifest.json、DEVECO_SDK_HOME、3 个 .so
+ *   1 拷贝运行时：../harmonypc-electron/ohos_hap 的 electron + web_engine（剔除生成物目录）
+ *   2 恢复 App 主进程三件套：src-main/{main.js,renderer-preload.js,package.json}
+ *   3 应用 App 配置 overlay：runtime-overlays/ 白名单文件回盖（缺失即硬失败）
+ *   4 bundleName 字面量替换：4 个 adapter 中通用 bundleName → App bundleName（次数断言）
+ *   5 清理 system-info demo 残留：resfile/resources/app 保留白名单之外全部删除并显式列出
+ *   6 注入 libc++_shared.so（DevEco SDK）
+ *   7 一致性守卫：.so 哈希 / 新壳 markers / barrel 导出 / App 身份 / demo 残留 / overlay 命中
+ *
+ * 用法：
+ *   node scripts/collect-runtime.mjs                 原地更新本工程（默认）
+ *   node scripts/collect-runtime.mjs --out <dir>     把流水线结果写到 <dir>（不碰本工程工作树）
+ *   node scripts/collect-runtime.mjs --verify-only   仅对目标（默认本工程）执行阶段 7 守卫
+ *
  * 前置：
- *   - ../harmonypc-electron 与本工程同级目录（HarmonyPC Electron 工程）
- *   - 原生 SO 库已就位：从华为仓库下载的 v37.2.3 产物（zip → libelectron_138.tar.gz）解压后，
- *     其 ohos_hap/electron/libs/arm64-v8a/ 下有 libelectron.so / libadapter.so / libffmpeg.so，
- *     需先放置到 ../harmonypc-electron/ohos_hap/electron/libs/（仓库默认不含 SO，需下载解压补齐）。
+ *   - ../harmonypc-electron 与本工程同级，且已回灌配套 ArkTS 外壳（fellow99/baseline）
+ *   - 原生 SO：v37.2.3-20260825.1 发布包解压到子工程 ohos_hap/electron/libs/arm64-v8a/
  */
-import { cpSync, existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { resolve, join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
+
+// ---------------------------------------------------------------- 参数/路径
+
+const argv = process.argv.slice(2);
+const outIdx = argv.indexOf('--out');
+let OUT_DIR = null;
+if (outIdx !== -1) {
+  const value = argv[outIdx + 1];
+  if (!value || value.startsWith('--')) {
+    console.error('[collect-runtime] 错误: --out 需要一个输出目录参数。用法: node scripts/collect-runtime.mjs --out <dir>');
+    process.exit(1);
+  }
+  OUT_DIR = resolve(value);
+}
+const VERIFY_ONLY = argv.includes('--verify-only');
 
 const harmonyRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const runtimeRoot = resolve(harmonyRoot, '../harmonypc-electron/ohos_hap');
 const sdkRoot = process.env.DEVECO_SDK_HOME;
+const manifestPath = resolve(runtimeRoot, 'runtime-manifest.json');
+/** 流水线产物根：默认本工程；--out 时为指定目录 */
+const targetRoot = OUT_DIR ?? harmonyRoot;
 
 const EXCLUDE_TOP = new Set(['build', 'oh_modules', 'node_modules', '.git', '.hvigor', '.idea', '.codegraph']);
 
+/** App 配置 overlay 白名单（相对工程/目标根的镜像路径，恰好 3 个） */
+const OVERLAY_FILES = [
+  'electron/src/main/module.json5',
+  'web_engine/src/main/module.json5',
+  'electron/src/main/resources/base/profile/shortcuts_config.json',
+];
+
+/** resfile/resources/app 保留白名单（dsh-dist.tar.gz 在 collect-dsh 之后才存在，缺失允许） */
+const APP_KEEP = new Set(['main.js', 'renderer-preload.js', 'package.json', 'electron_white.png', 'dsh-dist.tar.gz']);
+
+const APP_RESFILE_DIR = 'web_engine/src/main/resources/resfile/resources/app';
+
+// ---------------------------------------------------------------- 工具
+
+function fail(msg) {
+  console.error(`[collect-runtime] 错误: ${msg}`);
+  process.exit(1);
+}
+
+function log(stage, msg) {
+  console.log(`[collect-runtime][${stage}] ${msg}`);
+}
+
+function md5File(p) {
+  return createHash('md5').update(readFileSync(p)).digest('hex').toUpperCase();
+}
+
+function readText(p) {
+  return readFileSync(p, 'utf8');
+}
+
+function stageBanner(n, name) {
+  console.log(`[collect-runtime] ---- 阶段 ${n}: ${name} ----`);
+}
+
+// ---------------------------------------------------------------- 阶段 0
+
+function stage0Load() {
+  stageBanner(0, '清单加载与前置校验');
+  if (!existsSync(manifestPath)) {
+    fail(`运行时清单缺失: ${manifestPath}\n  请确认 ../harmonypc-electron 已切换到含 runtime-manifest.json 的 fellow99/baseline 回灌提交。`);
+  }
+  let manifest;
+  try {
+    manifest = JSON.parse(readText(manifestPath));
+  } catch (e) {
+    fail(`运行时清单不是合法 JSON: ${manifestPath} (${e.message})`);
+  }
+  validateManifest(manifest);
+  log(0, `清单 shellVersion=${manifest.shellVersion} binaryVersion=${manifest.binaryVersion}`);
+
+  for (const so of manifest.so) {
+    const p = resolve(runtimeRoot, so.path);
+    if (!existsSync(p)) fail(`原生 SO 缺失: ${p}\n  请将 ${manifest.binaryVersion} 发布包对应 .so 放到子工程 ohos_hap/electron/libs/arm64-v8a/。`);
+  }
+
+  if (!VERIFY_ONLY && !sdkRoot) {
+    fail('DEVECO_SDK_HOME 未设置，无法注入 libc++_shared.so');
+  }
+  return manifest;
+}
+
+/**
+ * 清单结构强校验：缺任一必需段都硬失败，避免守卫循环因空数组而空转（exit 0）。
+ */
+function validateManifest(m) {
+  const problems = [];
+  const needString = (key) => {
+    if (typeof m[key] !== 'string' || m[key].length === 0) problems.push(`缺少字符串字段 ${key}`);
+  };
+  const needNonEmptyArray = (key, itemCheck) => {
+    if (!Array.isArray(m[key]) || m[key].length === 0) {
+      problems.push(`缺少非空数组字段 ${key}`);
+      return;
+    }
+    m[key].forEach((it, i) => itemCheck?.(it, `${key}[${i}]`));
+  };
+  needString('shellVersion');
+  needString('binaryVersion');
+  needString('genericBundleName');
+  needNonEmptyArray('so', (it, where) => {
+    if (typeof it.path !== 'string' || !it.path) problems.push(`${where}.path 缺失`);
+    if (typeof it.md5 !== 'string' || !/^[0-9a-fA-F]{32}$/.test(it.md5 ?? '')) problems.push(`${where}.md5 必须是 32 位十六进制`);
+  });
+  needNonEmptyArray('shellMarkers', (it, where) => {
+    if (typeof it.symbol !== 'string' || !it.symbol) problems.push(`${where}.symbol 缺失`);
+    if (typeof it.file !== 'string' || !it.file) problems.push(`${where}.file 缺失`);
+  });
+  needString('barrelFile');
+  needNonEmptyArray('barrelExports');
+  const rw = m.bundleNameRewrite;
+  if (!rw || typeof rw !== 'object') {
+    problems.push('缺少对象字段 bundleNameRewrite');
+  } else {
+    if (typeof rw.from !== 'string' || !rw.from) problems.push('bundleNameRewrite.from 缺失');
+    if (!Array.isArray(rw.adapters) || rw.adapters.length === 0) problems.push('bundleNameRewrite.adapters 必须是非空数组');
+    if (typeof rw.expectedHitsPerFile !== 'number') problems.push('bundleNameRewrite.expectedHitsPerFile 必须是数字');
+  }
+  if (!m.libcxx || typeof m.libcxx.path !== 'string' || !m.libcxx.path) {
+    problems.push('libcxx.path 缺失');
+  }
+  if (problems.length > 0) {
+    fail(`运行时清单结构不完整（守卫不得空转）:\n  - ${problems.join('\n  - ')}\n  清单: ${manifestPath}`);
+  }
+}
+
+// ---------------------------------------------------------------- 阶段 1
+
 function copyModule(name) {
   const src = resolve(runtimeRoot, name);
-  const dest = resolve(harmonyRoot, name);
+  const dest = resolve(targetRoot, name);
   if (!existsSync(resolve(src, 'build-profile.json5')) && !existsSync(resolve(src, 'oh-package.json5'))) {
-    console.error(`[collect-runtime] 运行时模块缺失: ${src}`);
-    process.exit(1);
+    fail(`运行时模块缺失: ${src}`);
   }
   cpSync(src, dest, {
     recursive: true,
@@ -37,43 +174,206 @@ function copyModule(name) {
       return !EXCLUDE_TOP.has(top);
     },
   });
-  console.log(`[collect-runtime] 已 copy 模块 ${name} -> ${dest}`);
+  log(1, `已 copy 模块 ${name} -> ${dest}`);
 }
 
-// 校验原生 SO 库
-const soDir = resolve(runtimeRoot, 'electron/libs/arm64-v8a');
-const requiredSo = ['libelectron.so', 'libadapter.so', 'libffmpeg.so'];
-const missing = requiredSo.filter((n) => !existsSync(resolve(soDir, n)));
-if (missing.length > 0) {
-  console.error(`[collect-runtime] 缺失原生 SO 库: ${missing.join(', ')}`);
-  console.error('  请将下载的 Electron 编译产物（v37.2.3-20260825.1-release.zip → libelectron_138.tar.gz）');
-  console.error(`  解压后把 ohos_hap/electron/libs/arm64-v8a/ 下的 .so 放到: ${soDir}`);
-  process.exit(1);
+function stage1CopyRuntime() {
+  stageBanner(1, '拷贝运行时 electron + web_engine');
+  if (OUT_DIR) mkdirSync(targetRoot, { recursive: true });
+  for (const m of ['electron', 'web_engine']) copyModule(m);
 }
 
-for (const m of ['electron', 'web_engine']) {
-  copyModule(m);
+// ---------------------------------------------------------------- 阶段 2
+
+function restoreOne(srcRel, destRel, label) {
+  const src = resolve(harmonyRoot, srcRel);
+  const dest = resolve(targetRoot, destRel);
+  if (!existsSync(src)) fail(`本工程 ${label} 缺失: ${src}`);
+  mkdirSync(dirname(dest), { recursive: true });
+  cpSync(src, dest, { force: true });
+  log(2, `已恢复 ${label} -> ${relative(harmonyRoot, dest) || dest}`);
 }
 
-const mainSource = resolve(harmonyRoot, 'src-main/main.js');
-const mainDestination = resolve(harmonyRoot, 'web_engine/src/main/resources/resfile/resources/app/main.js');
-if (!existsSync(mainSource)) {
-  console.error(`[collect-runtime] 本工程主进程入口缺失: ${mainSource}`);
-  process.exit(1);
+function stage2RestoreAppTriple() {
+  stageBanner(2, '恢复 App 主进程三件套');
+  restoreOne('src-main/main.js', `${APP_RESFILE_DIR}/main.js`, 'main.js');
+  restoreOne('src-main/renderer-preload.js', `${APP_RESFILE_DIR}/renderer-preload.js`, 'renderer-preload.js');
+  restoreOne('src-main/package.json', `${APP_RESFILE_DIR}/package.json`, 'app package.json');
 }
-cpSync(mainSource, mainDestination, { force: true });
-console.log(`[collect-runtime] 已恢复本工程 main.js -> ${mainDestination}`);
 
-if (!sdkRoot) {
-  console.error('[collect-runtime] DEVECO_SDK_HOME 未设置，无法注入 better-sqlite3 所需 libc++_shared.so');
-  process.exit(1);
+// ---------------------------------------------------------------- 阶段 3
+
+function stage3ApplyOverlays() {
+  stageBanner(3, '应用 App 配置 overlay');
+  for (const rel of OVERLAY_FILES) {
+    const src = resolve(harmonyRoot, 'runtime-overlays', rel);
+    const dest = resolve(targetRoot, rel);
+    if (!existsSync(src)) fail(`overlay 源缺失（App 定制丢失）: ${src}`);
+    if (!existsSync(dest)) fail(`overlay 目标缺失（外壳结构可能已升级）: ${dest}`);
+    cpSync(src, dest, { force: true });
+    log(3, `回盖 ${rel}`);
+  }
 }
-const libcxx = resolve(sdkRoot, 'default/openharmony/native/llvm/lib/aarch64-linux-ohos/libc++_shared.so');
-if (!existsSync(libcxx)) {
-  console.error(`[collect-runtime] libc++_shared.so 缺失: ${libcxx}`);
-  process.exit(1);
+
+// ---------------------------------------------------------------- 阶段 4
+
+function stage4RewriteBundleName(manifest) {
+  stageBanner(4, 'bundleName 字面量替换');
+  const from = manifest.bundleNameRewrite?.from;
+  const expected = manifest.bundleNameRewrite?.expectedHitsPerFile ?? 1;
+  const adapters = manifest.bundleNameRewrite?.adapters;
+  if (!from || !Array.isArray(adapters)) fail('清单缺少 bundleNameRewrite.from/adapters 配置');
+  // App bundleName 以 AppScope 事实源为准
+  const appBundleName = readAppBundleName();
+
+  for (const rel of adapters) {
+    const p = resolve(targetRoot, rel);
+    if (!existsSync(p)) fail(`adapter 缺失（外壳结构可能已升级）: ${p}`);
+    const original = readText(p);
+    const hits = original.split(from).length - 1;
+    if (hits !== expected) {
+      fail(
+        `${rel} 中通用字面量 "${from}" 命中 ${hits} 次，预期 ${expected} 次。\n` +
+        '  外壳升级后必须重新评估 App bundleName 定制（见 docs/2026-09-09-runtime-shell-backport-design.md §5.3）。',
+      );
+    }
+    const rewritten = original.split(from).join(appBundleName);
+    if (rewritten.includes(from)) fail(`${rel} 替换后仍残留通用字面量 "${from}"`);
+    if ((rewritten.split(appBundleName).length - 1) !== expected) fail(`${rel} 替换后 App bundleName 次数异常`);
+    writeFileSync(p, rewritten);
+    log(4, `${rel.split('/').pop()}: ${from} -> ${appBundleName}（${hits} 处）`);
+  }
 }
-const targetLibcxx = resolve(harmonyRoot, 'electron/libs/arm64-v8a/libc++_shared.so');
-cpSync(libcxx, targetLibcxx, { force: true });
-console.log(`[collect-runtime] 已 copy libc++_shared.so -> ${targetLibcxx}`);
-console.log('[collect-runtime] 完成：electron + web_engine 模块已就绪');
+
+// ---------------------------------------------------------------- 阶段 5
+
+function stage5PurgeDemo() {
+  stageBanner(5, '清理 system-info demo 残留');
+  const dir = resolve(targetRoot, APP_RESFILE_DIR);
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+    log(5, 'resfile/resources/app 目录原本不存在，已创建（三件套已恢复）');
+    return;
+  }
+  for (const entry of readdirSync(dir)) {
+    if (APP_KEEP.has(entry)) continue;
+    const p = join(dir, entry);
+    rmSync(p, { recursive: true, force: true });
+    log(5, `清理非本应用文件: ${entry}`);
+  }
+}
+
+// ---------------------------------------------------------------- 阶段 6
+
+function stage6InjectLibcxx(manifest) {
+  stageBanner(6, '注入 libc++_shared.so');
+  const libcxx = resolve(sdkRoot, 'default/openharmony/native/llvm/lib/aarch64-linux-ohos/libc++_shared.so');
+  if (!existsSync(libcxx)) fail(`SDK libc++_shared.so 缺失: ${libcxx}`);
+  const dest = resolve(targetRoot, manifest.libcxx?.path ?? 'electron/libs/arm64-v8a/libc++_shared.so');
+  mkdirSync(dirname(dest), { recursive: true });
+  cpSync(libcxx, dest, { force: true });
+  log(6, `已 copy libc++_shared.so -> ${relative(targetRoot, dest)}`);
+}
+
+// ---------------------------------------------------------------- 阶段 7
+
+function readAppBundleName() {
+  const appScope = resolve(harmonyRoot, 'AppScope/app.json5');
+  if (!existsSync(appScope)) fail(`AppScope/app.json5 缺失: ${appScope}`);
+  const m = readText(appScope).match(/"bundleName"\s*:\s*"([^"]+)"/);
+  if (!m) fail(`无法从 AppScope/app.json5 解析 bundleName`);
+  return m[1];
+}
+
+function stage7Guards(manifest) {
+  stageBanner(7, '壳/二进制一致性守卫');
+  let failed = 0;
+  const guard = (cond, msg) => {
+    if (cond) {
+      log(7, `PASS ${msg}`);
+    } else {
+      console.error(`[collect-runtime][7] FAIL ${msg}`);
+      failed += 1;
+    }
+  };
+
+  // 7.1 二进制存在与哈希
+  for (const so of manifest.so ?? []) {
+    const p = resolve(targetRoot, so.path);
+    if (existsSync(p)) {
+      const h = md5File(p);
+      guard(h === (so.md5 ?? '').toUpperCase(), `SO 哈希 ${so.path} (${h})`);
+    } else {
+      guard(false, `SO 存在 ${so.path}`);
+    }
+  }
+
+  // 7.2 新壳标记
+  for (const mk of manifest.shellMarkers ?? []) {
+    const p = resolve(targetRoot, mk.file);
+    const ok = existsSync(p) && readText(p).includes(mk.symbol);
+    guard(ok, `新壳标记 ${mk.symbol} @ ${mk.file}`);
+  }
+
+  // 7.3 barrel 导出
+  const barrelPath = resolve(targetRoot, manifest.barrelFile ?? 'web_engine/Index.ets');
+  if (existsSync(barrelPath)) {
+    const barrel = readText(barrelPath);
+    for (const e of manifest.barrelExports ?? []) guard(barrel.includes(e), `barrel 导出 ${e}`);
+  } else {
+    guard(false, `barrel 存在 ${manifest.barrelFile}`);
+  }
+
+  // 7.4 App 身份：AppScope bundleName + 4 adapter 无通用字面量残留
+  const appBundleName = readAppBundleName();
+  const expectedBundle = 'org.fellow99.DeepseekHarnessHarmony';
+  guard(appBundleName === expectedBundle, `AppScope bundleName = ${appBundleName}`);
+  const generic = manifest.bundleNameRewrite?.from ?? 'com.huawei.ohos_electron';
+  for (const rel of manifest.bundleNameRewrite?.adapters ?? []) {
+    const p = resolve(targetRoot, rel);
+    const ok = existsSync(p) && !readText(p).includes(generic);
+    guard(ok, `adapter 无通用字面量残留 ${rel.split('/').pop()}`);
+  }
+
+  // 7.5 demo 残留
+  const dir = resolve(targetRoot, APP_RESFILE_DIR);
+  const leftovers = existsSync(dir) ? readdirSync(dir).filter((e) => !APP_KEEP.has(e)) : [];
+  guard(leftovers.length === 0, `resfile/app 无 demo 残留${leftovers.length ? `（发现: ${leftovers.join(', ')}）` : ''}`);
+
+  // 7.6 overlay 命中
+  for (const rel of OVERLAY_FILES) {
+    const src = resolve(harmonyRoot, 'runtime-overlays', rel);
+    const dest = resolve(targetRoot, rel);
+    const ok = existsSync(src) && existsSync(dest) && md5File(src) === md5File(dest);
+    guard(ok, `overlay 命中 ${rel}`);
+  }
+
+  // 7.7 libc++ 注入哈希（若清单记录）
+  if (manifest.libcxx?.md5) {
+    const p = resolve(targetRoot, manifest.libcxx.path);
+    guard(existsSync(p) && md5File(p) === manifest.libcxx.md5.toUpperCase(), `libc++_shared.so 哈希 (${manifest.libcxx.source ?? 'SDK'})`);
+  }
+
+  if (failed > 0) fail(`一致性守卫 ${failed} 项未通过，已中止（旧壳/错 SO/demo 污染/定制丢失风险）。`);
+  log(7, '全部守卫通过');
+}
+
+// ---------------------------------------------------------------- main
+
+function main() {
+  const manifest = stage0Load();
+  if (!VERIFY_ONLY) {
+    stage1CopyRuntime();
+    stage2RestoreAppTriple();
+    stage3ApplyOverlays();
+    stage4RewriteBundleName(manifest);
+    stage5PurgeDemo();
+    stage6InjectLibcxx(manifest);
+  }
+  stage7Guards(manifest);
+  console.log(
+    `[collect-runtime] 完成：electron + web_engine 已就绪（目标: ${targetRoot}${VERIFY_ONLY ? '，仅守卫' : ''}）`,
+  );
+}
+
+main();

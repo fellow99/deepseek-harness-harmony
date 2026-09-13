@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const dshRoot = resolve(projectRoot, '../deepseek-harness');
 const distDir = resolve(projectRoot, 'dsh-dist');
-const betterSqliteArchive = resolve(projectRoot, '../harmonypc-electron/better-sqlite3编译指导（Electron37）/better-sqlite3-ohos-v138.tar.gz');
+const betterSqliteArchive = resolve(projectRoot, '../harmonypc-electron-versions/better-sqlite3编译指导（Electron37）/better-sqlite3-ohos-v138.tar.gz');
 
 function run(cmd, cwd) {
   console.log(`\n> ${cmd}`);

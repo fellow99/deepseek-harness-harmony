@@ -25,7 +25,7 @@ const LOADING_HTML = `<!DOCTYPE html>
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>DeepSeek Harness</title>
+  <title>Deepseek Harness Harmony</title>
   <style>
     html, body { height: 100%; margin: 0; }
     body {
@@ -45,34 +45,25 @@ const LOADING_HTML = `<!DOCTYPE html>
 </head>
 <body>
   <div class="spinner"></div>
-  <div class="title">DeepSeek Harness</div>
+  <div class="title">Deepseek Harness Harmony</div>
   <div class="hint">应用初始化中，请稍候…</div>
 </body>
 </html>`;
 const LOADING_URL = 'data:text/html;charset=utf-8,' + encodeURIComponent(LOADING_HTML);
 
-// 渲染进程 polyfill：鸿蒙 Chromium 的 Web Crypto 可能缺 crypto.randomUUID，
-// 在每次页面 dom-ready 时注入主世界，用 getRandomValues 兜底生成 UUID v4。
-const RENDERER_POLYFILL = [
-  "if (typeof crypto.randomUUID !== 'function') {",
-  "  crypto.randomUUID = function randomUUID() {",
-  "    try {",
-  "      var b = crypto.getRandomValues(new Uint8Array(16));",
-  "      b[6] = (b[6] & 0x0f) | 0x40;",
-  "      b[8] = (b[8] & 0x3f) | 0x80;",
-  "      var h = '';",
-  "      for (var i = 0; i < 16; i++) h += b[i].toString(16).padStart(2, '0');",
-  "      return h.slice(0,8)+'-'+h.slice(8,12)+'-'+h.slice(12,16)+'-'+h.slice(16,20)+'-'+h.slice(20);",
-  "    } catch (e) {",
-  "      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {",
-  "        var r = (Math.random() * 16) | 0;",
-  "        var v = c === 'x' ? r : (r & 0x3) | 0x8;",
-  "        return v.toString(16);",
-  "      });",
-  "    }",
-  "  };",
-  "}",
-].join('\n');
+// 渲染进程 preload 路径：crypto.randomUUID polyfill + __DSH_TRANSPORT__.ownsHost 声明
+// 都在 preload 内完成（主世界、每页脚本之前执行，含 token 认证 303 跳转后的新文档）。
+// 详见 renderer-preload.js 头注。用 __dirname 解析，与 dsh-dist.tar.gz 同目录打入 resfile。
+const PRELOAD_PATH = join(__dirname, 'renderer-preload.js');
+
+// 所有 BrowserWindow 共用的 webPreferences：本鸿蒙 Electron 分支的标准配置为
+// nodeIntegration:true + contextIsolation:false（见 harmonypc-electron 运行时自带 main.js），
+// preload 因此直接在主世界、页面脚本之前运行。
+const DSH_WEB_PREFERENCES = {
+  preload: PRELOAD_PATH,
+  nodeIntegration: true,
+  contextIsolation: false,
+};
 
 // ── dsh 部署产物路径 ─────────────────────────────────────────────────
 const DSH_ARCHIVE = join(__dirname, 'dsh-dist.tar.gz');
@@ -364,12 +355,28 @@ async function startHost() {
     }
     const port = ctx.webServer.port;
     const host = pickReachableHost();
-    console.log('[dsh-harmony] host 就绪: http://' + host + ':' + port + '/');
+    const baseUrl = 'http://' + host + ':' + port + '/';
+    // dsh（rc.1，2026-08-24 browser-token-authentication 起）对 Web UI 根路径启用浏览器会话
+    // token 认证：首次加载必须携带 ?token=<launchToken>（由 ctx.connection.authenticatedUrl 生成），
+    // 服务端校验后下发绑定 authority 的签名 cookie 并重定向到干净的 /；裸 / 一律返回 401。
+    // 内嵌渲染进程与 Host 同机、可信，故直接用进程 launchToken 生成认证 URL。token 交换发生在
+    // Host 头被改写为 127.0.0.1:<port> 之后，cookie 的 authority 与后续请求的改写 Host 一致。
+    let url = baseUrl;
+    try {
+      if (ctx.connection && typeof ctx.connection.authenticatedUrl === 'function') {
+        url = ctx.connection.authenticatedUrl(baseUrl);
+      } else {
+        console.error('[dsh-harmony] ctx.connection.authenticatedUrl 不可用，回退裸 URL（可能 401）');
+      }
+    } catch (e) {
+      console.error('[dsh-harmony] authenticatedUrl 生成失败，回退裸 URL:', e);
+    }
+    console.log('[dsh-harmony] host 就绪: ' + baseUrl);
     return {
       ctx,
       shutdown: (code) => shutdown.shutdown(code ?? 0),
       port,
-      url: 'http://' + host + ':' + port + '/',
+      url,
     };
   } catch (err) {
     console.error('[dsh-harmony] host 启动失败:', err);
@@ -450,12 +457,20 @@ function installLoopbackHeaderRewrite(win, port) {
     win.webContents.session.webRequest.onBeforeSendHeaders((details, callback) => {
       const headers = details.requestHeaders ?? {};
       let target = null;
-      try { target = new URL(details.url); } catch { /* 非 http(s) URL（data: 等）跳过 */ }
-      if (target !== null && (target.protocol === 'http:' || target.protocol === 'https:') && target.port === String(port)) {
+      try { target = new URL(details.url); } catch { /* 非 http(s)/ws URL（data: 等）跳过 */ }
+      // 必须同时覆盖 ws:/wss:：Gateway 的事件流走 WebSocket 升级（/api/remote.mux），
+      // 其 URL 协议为 ws:，若不纳入，WS 握手的 Host/Origin 不会被改写为 loopback，
+      // 服务端按局域网 Host 校验 authority-bound 认证 cookie / Origin 围栏会拒绝握手（net::ERR_FAILED）。
+      if (target !== null
+          && (target.protocol === 'http:' || target.protocol === 'https:'
+              || target.protocol === 'ws:' || target.protocol === 'wss:')
+          && target.port === String(port)) {
         headers.Host = loopbackAuthority;
-        // 同源请求浏览器会带 Origin（POST  fetch）；改写为 loopback 以通过围栏的 Origin 比对。
+        // 同源请求浏览器会带 Origin（POST fetch / WS 升级）；改写为 loopback 以通过围栏的 Origin 比对。
+        // WS 升级的 Origin 是页面来源（http），改写为 http://127.0.0.1:<port> 与改写后的 Host 一致。
         if (typeof headers.Origin === 'string' && headers.Origin.length > 0) {
-          headers.Origin = 'http://' + loopbackAuthority;
+          const pageScheme = (target.protocol === 'wss:') ? 'https' : 'http';
+          headers.Origin = pageScheme + '://' + loopbackAuthority;
         }
       }
       callback({ requestHeaders: headers });
@@ -477,8 +492,9 @@ app.whenReady().then(async () => {
     win = new BrowserWindow({
       width: 1200,
       height: 800,
-      title: 'DeepSeek Harness',
+      title: 'Deepseek Harness Harmony',
       autoHideMenuBar: true,
+      webPreferences: DSH_WEB_PREFERENCES,
     });
     win.setWindowButtonVisibility(true);
   } catch (e) {
@@ -494,10 +510,9 @@ app.whenReady().then(async () => {
     console.error('[dsh-harmony] failed to load ' + failedUrl + ': ' + code + ' ' + desc);
   });
 
-  // 每次页面 dom-ready 时向主世界注入 crypto.randomUUID polyfill（渲染进程 Chromium 可能缺失）
-  win.webContents.on('dom-ready', () => {
-    win.webContents.executeJavaScript(RENDERER_POLYFILL).catch(() => {});
-  });
+  // 渲染进程引导（crypto.randomUUID polyfill + __DSH_TRANSPORT__.ownsHost）由 preload
+  // 脚本在每页脚本之前注入主世界，无需也不应再用 dom-ready + executeJavaScript（那会与
+  // dsh 客户端插件 apply() 的早期求值竞争，导致 isLoopback 被缓存为 false）。
 
   if (!(await ensureDshExtracted())) {
     console.error('[dsh-harmony] dsh 产物解压失败');
@@ -517,7 +532,7 @@ app.whenReady().then(async () => {
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      const w = new BrowserWindow({ width: 1200, height: 800 });
+      const w = new BrowserWindow({ width: 1200, height: 800, webPreferences: DSH_WEB_PREFERENCES });
       if (host) {
         installLoopbackHeaderRewrite(w, host.port);
         void w.loadURL(host.url);
