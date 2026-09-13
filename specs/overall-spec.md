@@ -75,7 +75,7 @@
 
 ## 6. 依赖
 
-- `../deepseek-harness`（dsh Host，patch 基线 dsh-v0.1.0-rc.7）。
+- `../deepseek-harness`（dsh Host，patch 基线 dsh-v0.1.2-rc.1）。
 - `../dsh-market`（插件市场，1.26.0）。
 - `../harmonypc-electron`（Electron-on-鸿蒙运行时，Electron 37）。
 - `../deepseek-harness-desktop`（仅架构参考，无构建依赖）。

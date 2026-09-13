@@ -179,8 +179,13 @@ const HARMONY_DISABLED_PRESET_ROWS = {
 
 function patchAgentPresetsRuntime() {
   const { readdirSync: rd, existsSync: ex, readFileSync: rf, writeFileSync: wf } = require('node:fs');
-  const presetsDir = join(DSH_ROOT, 'config', 'agent-presets');
-  if (!ex(presetsDir)) return;
+  // dsh ≥ 0.1.2 ships presets inside the agent-presets package (SHIPPED_PRESET_ROOT =
+  // `<pkg>/presets/`); earlier builds kept them under config/agent-presets. Use whichever exists.
+  const presetsDir = [
+    join(DSH_ROOT, 'node_modules', '@deepseek-ai', 'dsh-agent-presets', 'presets'),
+    join(DSH_ROOT, 'config', 'agent-presets'),
+  ].find(ex);
+  if (presetsDir === undefined) return;
   let total = 0;
   for (const name of rd(presetsDir)) {
     const file = join(presetsDir, name, 'agent.cordis.yml');

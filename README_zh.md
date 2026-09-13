@@ -6,7 +6,7 @@
 
 > 基于「Electron-on-鸿蒙」运行时（[harmonypc-electron](https://atomgit.com/jianguoxu/harmonypc-electron)，Electron 37 / Node 22.17.0）的 [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) 桌面封装——在鸿蒙设备的 Electron 主进程内跑 dsh Host（含 webserver），渲染进程同源加载 dsh Web UI，界面 100% 复用 dsh Web UI。
 
-**版本**：`0.1.0` · **状态**：✅ 已真机验证——HarmonyOS 6.1.0.135（API 24），Electron 37 / Node 22.17.0，dsh Web UI 正常运行（核心聊天 / agent / 工具调用 / Web UI 全部可用）。完整工程规划与最终实现记录见 [docs/工程规划.md](docs/工程规划.md)。
+**版本**：`0.1.2` · **状态**：✅ 已真机验证——HarmonyOS 6.1.0.135（API 24），Electron 37 / Node 22.17.0，dsh Web UI 正常运行（核心聊天 / agent / 工具调用 / Web UI 全部可用）。完整工程规划与最终实现记录见 [docs/工程规划.md](docs/工程规划.md)。
 
 ---
 
@@ -67,7 +67,7 @@ dsh 已完成 **Host/Client 分层**，其 webserver **同时服务 SPA dist 与
 
 - **Electron-on-鸿蒙**（harmonypc-electron，Electron 37 / Node 22.17.0）—— 原生 SO + ArkTS 桥接层（aki / adapter / addon + libshim.a）
 - **ArkTS / ArkUI**（Stage 模型，`web_engine` HAR 桥接：~46 Adapter + ~44 AdapterBind）
-- **deepseek-harness**（`dsh`，同级目录 `../deepseek-harness`，非 submodule，源码引用）—— 当前构建基于 **`dsh-v0.1.0-rc.7`**，其补丁位于 `patches/dsh-v0.1.0-rc.7/`
+- **deepseek-harness**（`dsh`，同级目录 `../deepseek-harness`，非 submodule，源码引用）—— 当前构建基于 **`dsh-v0.1.2-rc.1`**，其补丁位于 `patches/dsh-v0.1.2-rc.1/`
 - **dsh-market**（同级目录 `../dsh-market`，npm 包 `dshmarket`，内置插件市场）
 - **hvigor / DevEco Studio**（HAP 构建 + 签名）
 
@@ -102,19 +102,19 @@ tar -czf web_engine/src/main/resources/resfile/resources/app/dsh-dist.tar.gz --f
 #    NODE_HOME=<DevEco>/tools/node DEVECO_SDK_HOME=<sdk>  ohpm install  hvigorw assembleHap --mode module -p product=default -p buildMode=debug --no-daemon
 ```
 
-> **dsh 版本锚定**：本工程基于 deepseek-harness tag **`dsh-v0.1.0-rc.7`** 构建。补丁按 dsh 版本分目录存放（`patches/<dsh-tag>/`），`scripts/build-dsh.mjs` 固定指向 `patches/dsh-v0.1.0-rc.7/` —— 升级到新的 dsh tag 时，需新增对应的 `patches/<新 tag>/` 目录并更新该指向。
+> **dsh 版本锚定**：本工程基于 deepseek-harness tag **`dsh-v0.1.2-rc.1`** 构建。补丁按 dsh 版本分目录存放（`patches/<dsh-tag>/`），`scripts/build-dsh.mjs` 固定指向 `patches/dsh-v0.1.2-rc.1/` —— 升级到新的 dsh tag 时，需新增对应的 `patches/<新 tag>/` 目录并更新该指向。
 
 | Patch | 目的 |
 |---|---|
-| `patches/dsh-v0.1.0-rc.7/dsh-symlink-to-copy.patch` | 鸿蒙沙箱禁 symlink（`EACCES`）→ 回退 `cpSync` 递归拷贝 |
-| `patches/dsh-v0.1.0-rc.7/dsh-allow-all-interfaces.patch` | 移除 webserver `--host 0.0.0.0` 拒绝检查（loopback 隔离需绑全网卡 + 局域网 IP） |
-| `patches/dsh-v0.1.0-rc.7/dsh-disable-hmr.patch` | `DSH_DISABLE_HMR` 开关，跳过依赖 `--expose-internals` 的 watch-only HMR |
-| `patches/dsh-v0.1.0-rc.7/dsh-disable-native-picker.patch` | 目录选择器走 browse（原生 dialog worker 在 Electron 下 spawn 失败） |
+| `patches/dsh-v0.1.2-rc.1/dsh-symlink-to-copy.patch` | 鸿蒙沙箱禁 symlink（`EACCES`）→ 回退 `cpSync` 递归拷贝 |
+| `patches/dsh-v0.1.2-rc.1/dsh-allow-all-interfaces.patch` | 移除 webserver `--host 0.0.0.0` 拒绝检查（loopback 隔离需绑全网卡 + 局域网 IP） |
+| `patches/dsh-v0.1.2-rc.1/dsh-disable-hmr.patch` | `DSH_DISABLE_HMR` 开关，跳过依赖 `--expose-internals` 的 watch-only HMR |
+| `patches/dsh-v0.1.2-rc.1/dsh-disable-native-picker.patch` | 目录选择器走 browse（原生 dialog worker 在 Electron 下 spawn 失败） |
 
 **前置——同级工程 checkout**：本工程消费 3 个同级工程（非 submodule），构建前需放到同级目录：
 
 ```bash
-git clone --branch dsh-v0.1.0-rc.7 https://github.com/deepseek-ai/deepseek-harness.git ../deepseek-harness
+git clone --branch dsh-v0.1.2-rc.1 https://github.com/deepseek-ai/deepseek-harness.git ../deepseek-harness
 git clone --branch v1.26.0           https://github.com/dsh-market/dsh-market.git       ../dsh-market
 # ../harmonypc-electron 为 Electron-on-鸿蒙运行时工程，需解压 Electron 37 编译产物补齐 3 个 SO
 ```
@@ -124,9 +124,10 @@ git clone --branch v1.26.0           https://github.com/dsh-market/dsh-market.gi
 ### 运行
 
 ```bash
-hdc uninstall com.huawei.ohos_electron   # 首装/换产物需先卸载，清掉旧 userData 中过期 dsh-dist
+hdc tconn <设备IP>:<端口>   # 先建立无线（IP）调试连接；端口见设备 开发者选项 → 无线调试
+hdc uninstall org.fellow99.DeepseekHarnessHarmony   # 首装/换产物需先卸载，清掉旧 userData 中过期 dsh-dist
 hdc app install -r electron/build/default/outputs/default/electron-default-signed.hap
-hdc shell aa start -a EntryAbility -b com.huawei.ohos_electron
+hdc shell aa start -a EntryAbility -b org.fellow99.DeepseekHarnessHarmony
 ```
 
 > 环境要求：DevEco Studio 4.0+、HarmonyOS SDK API 17+（targetSdk 6.1.1(24)）、Node 18+、pnpm@11、HDC。

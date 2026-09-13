@@ -137,7 +137,7 @@
 ## 7. 假设与约束
 
 - **假设**：三个同级工程与本工程并行存放（无 git submodule），路径固定为 `../deepseek-harness`、`../dsh-market`、`../harmonypc-electron`。
-- **假设**：dsh 已 checkout 到补丁基线版本（`dsh-v0.1.0-rc.7`），否则补丁可能冲突。
+- **假设**：dsh 已 checkout 到补丁基线版本（`dsh-v0.1.2-rc.1`），否则补丁可能冲突。
 - **假设**：构建在 Windows 上执行（`collect-dsh` 的 `pruneForeignPrebuilds` 以 `process.platform-process.arch` 为目标平台）；Windows x64 无法加载 aarch64 `.node`，native 加载验证需在 Electron 37 真机执行。
 - **约束**：产物适配（sharp stub / sqlite 注入 / preset 禁用）统一集中在 `collect-dsh` 阶段，属本模块步骤，非独立模块；与运行时兜底（main.js 的 `patchAgentPresetsRuntime`）双保险。
 - **约束**：`better-sqlite3` 不放入 Windows workspace 运行依赖（构建环境可能无对应 native toolchain），由本模块注入 aarch64 成品。

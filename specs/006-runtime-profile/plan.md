@@ -24,7 +24,7 @@
 | `@deepseek-ai/dsh-base` | dsh 源码引用（bundles 名） | profile 基础面 bundle |
 | `@deepseek-ai/dsh-web-app` | dsh 源码引用（bundles 名） | profile 浏览器面 bundle（含 web-runtime / webserver 行） |
 | Cordis（dsh 内置） | dsh 内置 | patch 语法（`id` 定位 + 整块替换 + `disabled: true`） |
-| dsh 源码基线 | `dsh-v0.1.0-rc.7`（4 个 patch 的基线） | patch 的作用对象 |
+| dsh 源码基线 | `dsh-v0.1.2-rc.1`（4 个 patch 的基线） | patch 的作用对象 |
 
 > 4 个 patch 的作用文件（dsh 仓库内路径）：
 > `packages/boot/app-boot/src/profile.ts`、`packages/bundle/web-app/src/startup.ts`、
@@ -165,7 +165,7 @@
 
 ## 7. 测试考虑
 
-- **幂等（构建期，可建议）**：对 `dsh-v0.1.0-rc.7` 基线正向 `git apply` 4 个 patch 成功；重复 apply 被
+- **幂等（构建期，可建议）**：对 `dsh-v0.1.2-rc.1` 基线正向 `git apply` 4 个 patch 成功；重复 apply 被
   `--reverse --check` 跳过；`--reverse` 可干净回滚（FR-006-012）。
 - **patch 语义（源码级，可建议）**：
   - symlink 沙箱 EACCES 下 `ensureSymlink` 回退 cpSync 且不抛错；目标已是目录时 return（FR-006-008）；
@@ -183,10 +183,10 @@
 |------|------|-----------|
 | `profiles/desktop/package.json` | 声明 `desktop` profile 组合与 dshmarket 依赖 | 12 行 |
 | `profiles/desktop/cordis.patch.yml` | web-runtime/webserver/dsh-market 覆盖 + 4 插件禁用 | 62 行 |
-| `patches/dsh-v0.1.0-rc.7/dsh-symlink-to-copy.patch` | symlink EACCES → cpSync 回退 | 56 行 / 2515B |
-| `patches/dsh-v0.1.0-rc.7/dsh-allow-all-interfaces.patch` | 移除 `0.0.0.0` 拒绝检查 | 14 行 / 771B |
-| `patches/dsh-v0.1.0-rc.7/dsh-disable-hmr.patch` | `DSH_DISABLE_HMR` 开关跳过 HMR | 14 行 / 663B |
-| `patches/dsh-v0.1.0-rc.7/dsh-disable-native-picker.patch` | Electron 下目录选择器走 browse | 14 行 / 1044B |
+| `patches/dsh-v0.1.2-rc.1/dsh-symlink-to-copy.patch` | symlink EACCES → cpSync 回退 | 46 行 / 2391B |
+| `patches/dsh-v0.1.2-rc.1/dsh-allow-all-interfaces.patch` | 移除 `0.0.0.0` 拒绝检查 | 14 行 / 771B |
+| `patches/dsh-v0.1.2-rc.1/dsh-disable-hmr.patch` | `DSH_DISABLE_HMR` 开关跳过 HMR | 14 行 / 781B |
+| `patches/dsh-v0.1.2-rc.1/dsh-disable-native-picker.patch` | Electron 下目录选择器走 browse | 13 行 / 1044B |
 
 ## 9. 与规格的交叉引用
 
@@ -199,8 +199,8 @@
 | FR-006-005（禁用 4 插件） | `cordis.patch.yml:32-39`（`subprocess`/`sandbox`/`bash-sandbox`/`permission`） |
 | FR-006-006（dsh-market 配置） | `cordis.patch.yml:58-62`（`profile: desktop`、`allowRestart: false`） |
 | FR-006-007（端口注入） | `cordis.patch.yml:49`（`port: !!js ctx.webStartup.port ?? 3080`） |
-| FR-006-008（symlink 回退 copy） | `patches/dsh-v0.1.0-rc.7/dsh-symlink-to-copy.patch`（`ensureSymlink` 的 cpSync 回退 + isDirectory return） |
-| FR-006-009（移除 0.0.0.0 拒绝） | `patches/dsh-v0.1.0-rc.7/dsh-allow-all-interfaces.patch`（删除 `program.error(...)` 3 行） |
-| FR-006-010（DSH_DISABLE_HMR） | `patches/dsh-v0.1.0-rc.7/dsh-disable-hmr.patch`（`!process.env.DSH_DISABLE_HMR &&`） |
-| FR-006-011（Electron → browse） | `patches/dsh-v0.1.0-rc.7/dsh-disable-native-picker.patch`（`if ('electron' in process.versions) return 'browse'`） |
+| FR-006-008（symlink 回退 copy） | `patches/dsh-v0.1.2-rc.1/dsh-symlink-to-copy.patch`（`ensureSymlink` 的 cpSync 回退 + isDirectory return） |
+| FR-006-009（移除 0.0.0.0 拒绝） | `patches/dsh-v0.1.2-rc.1/dsh-allow-all-interfaces.patch`（删除 `program.error(...)` 3 行） |
+| FR-006-010（DSH_DISABLE_HMR） | `patches/dsh-v0.1.2-rc.1/dsh-disable-hmr.patch`（`!process.env.DSH_DISABLE_HMR &&`） |
+| FR-006-011（Electron → browse） | `patches/dsh-v0.1.2-rc.1/dsh-disable-native-picker.patch`（`if ('electron' in process.versions) return 'browse'`） |
 | FR-006-012（幂等应用） | 4 个 patch 均支持 `git apply --reverse --check`（由 005 在构建期执行） |

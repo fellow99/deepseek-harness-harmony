@@ -154,7 +154,7 @@
 ## 7. 假设与约束
 
 - **假设**：复用 web 组合（dsh-base + dsh-web-app）+ dshmarket 是既定产品决策（工程规划 §3 原则、§9）。
-- **约束**：4 个 patch 的基线版本为 `dsh-v0.1.0-rc.7`（工程规划 §18.4 前置 2）；上游版本变更可能导致 patch 失配。
+- **约束**：4 个 patch 的基线版本为 `dsh-v0.1.2-rc.1`（工程规划 §18.4 前置 2）；上游版本变更可能导致 patch 失配。
   [NEEDS CLARIFICATION：patch 是否对上游后续版本向前兼容未验证]
 - **约束（已知取舍）**：禁用 subprocess/sandbox/bash-sandbox/permission 意味着终端（bash 工具）、进程沙箱、
   内容搜索等能力不可用（MVP 接受），恢复需按 aarch64 工具链交叉编译原生模块（工程规划 §18.5）。

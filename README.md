@@ -6,7 +6,7 @@
 
 > A HarmonyOS desktop wrapper for [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) built on the "Electron-on-HarmonyOS" runtime ([harmonypc-electron](https://atomgit.com/jianguoxu/harmonypc-electron), Electron 37 / Node 22.17.0) — runs the dsh Host (with webserver) inside the Electron main process on HarmonyOS devices, and the renderer loads the dsh Web UI same-origin, 100% reusing the dsh Web UI.
 
-**Version**: `0.1.0` · **Status**: ✅ Verified on device — HarmonyOS 6.1.0.135 (API 24), Electron 37 / Node 22.17.0, dsh Web UI runs normally (core chat / agent / tool calling / Web UI all functional). See [docs/工程规划.md](docs/工程规划.md) for the full engineering plan and final implementation record.
+**Version**: `0.1.2` · **Status**: ✅ Verified on device — HarmonyOS 6.1.0.135 (API 24), Electron 37 / Node 22.17.0, dsh Web UI runs normally (core chat / agent / tool calling / Web UI all functional). See [docs/工程规划.md](docs/工程规划.md) for the full engineering plan and final implementation record.
 
 ---
 
@@ -67,7 +67,7 @@ Key point: **the renderer loads same-origin — zero CORS, zero auth, zero custo
 
 - **Electron-on-HarmonyOS** (harmonypc-electron, Electron 37 / Node 22.17.0) — native SO + ArkTS bridge layer (aki / adapter / addon + libshim.a)
 - **ArkTS / ArkUI** (Stage model, `web_engine` HAR bridge: ~46 Adapters + ~44 AdapterBinds)
-- **deepseek-harness** (`dsh`, sibling directory `../deepseek-harness`, not a submodule, source reference) — current build is based on **`dsh-v0.1.0-rc.7`**; its patches live in `patches/dsh-v0.1.0-rc.7/`
+- **deepseek-harness** (`dsh`, sibling directory `../deepseek-harness`, not a submodule, source reference) — current build is based on **`dsh-v0.1.2-rc.1`**; its patches live in `patches/dsh-v0.1.2-rc.1/`
 - **dsh-market** (sibling directory `../dsh-market`, npm package `dshmarket`, built-in plugin marketplace)
 - **hvigor / DevEco Studio** (HAP build + signing)
 
@@ -120,19 +120,19 @@ Signing material is **externalized** so `build-profile.json5` stays secret-free 
 >
 > The `.p7b` provisioning profile is signed by Huawei — it **cannot be regenerated locally** (no local profile-signing CA; editing the SDK `Unsigned*ProfileTemplate.json` does not auto-regenerate an existing `.p7b`). Regenerate it in **DevEco Studio → File → Project Structure → Signing Configs**, with the restricted permission requested (ACL cross-level), then re-point `signing.local.json` at the new `.p7b`. See "Signing & restricted permissions" below.
 
-> **dsh version pin.** This project builds against deepseek-harness tag **`dsh-v0.1.0-rc.7`**. Patches are organized per dsh version (`patches/<dsh-tag>/`) and `scripts/build-dsh.mjs` pins `patches/dsh-v0.1.0-rc.7/` — when bumping to a new dsh tag, add a matching `patches/<new-tag>/` directory and update that pin.
+> **dsh version pin.** This project builds against deepseek-harness tag **`dsh-v0.1.2-rc.1`**. Patches are organized per dsh version (`patches/<dsh-tag>/`) and `scripts/build-dsh.mjs` pins `patches/dsh-v0.1.2-rc.1/` — when bumping to a new dsh tag, add a matching `patches/<new-tag>/` directory and update that pin.
 
 | Patch | Purpose |
 |---|---|
-| `patches/dsh-v0.1.0-rc.7/dsh-symlink-to-copy.patch` | HarmonyOS sandbox forbids symlink (`EACCES`) → fall back to `cpSync` recursive copy |
-| `patches/dsh-v0.1.0-rc.7/dsh-allow-all-interfaces.patch` | Remove webserver's `--host 0.0.0.0` rejection check (loopback isolation requires binding all interfaces + LAN IP) |
-| `patches/dsh-v0.1.0-rc.7/dsh-disable-hmr.patch` | Add `DSH_DISABLE_HMR` switch, skipping watch-only HMR (HMR depends on `--expose-internals`) |
-| `patches/dsh-v0.1.0-rc.7/dsh-disable-native-picker.patch` | Force directory-picker to use browse (native dialog worker fails to spawn under Electron) |
+| `patches/dsh-v0.1.2-rc.1/dsh-symlink-to-copy.patch` | HarmonyOS sandbox forbids symlink (`EACCES`) → fall back to `cpSync` recursive copy |
+| `patches/dsh-v0.1.2-rc.1/dsh-allow-all-interfaces.patch` | Remove webserver's `--host 0.0.0.0` rejection check (loopback isolation requires binding all interfaces + LAN IP) |
+| `patches/dsh-v0.1.2-rc.1/dsh-disable-hmr.patch` | Add `DSH_DISABLE_HMR` switch, skipping watch-only HMR (HMR depends on `--expose-internals`) |
+| `patches/dsh-v0.1.2-rc.1/dsh-disable-native-picker.patch` | Force directory-picker to use browse (native dialog worker fails to spawn under Electron) |
 
 **Prerequisite — sibling source checkouts.** This project consumes 3 sibling projects (not submodules); clone them next to this project before building:
 
 ```bash
-git clone --branch dsh-v0.1.0-rc.7 https://github.com/deepseek-ai/deepseek-harness.git ../deepseek-harness
+git clone --branch dsh-v0.1.2-rc.1 https://github.com/deepseek-ai/deepseek-harness.git ../deepseek-harness
 git clone --branch v1.26.0           https://github.com/dsh-market/dsh-market.git       ../dsh-market
 # ../harmonypc-electron is the Electron-on-HarmonyOS runtime project; extract the Electron 37 build artifacts to supply the 3 SOs
 ```
@@ -142,9 +142,10 @@ git clone --branch v1.26.0           https://github.com/dsh-market/dsh-market.gi
 ### Run
 
 ```bash
-hdc uninstall com.huawei.ohos_electron   # uninstall first on fresh install / artifact change, to clear stale dsh-dist in userData
+hdc tconn <device-ip>:<port>   # wireless (IP) debugging first; the port is shown by Developer options → Wireless debugging
+hdc uninstall org.fellow99.DeepseekHarnessHarmony   # uninstall first on fresh install / artifact change, to clear stale dsh-dist in userData
 hdc app install -r electron/build/default/outputs/default/electron-default-signed.hap
-hdc shell aa start -a EntryAbility -b com.huawei.ohos_electron
+hdc shell aa start -a EntryAbility -b org.fellow99.DeepseekHarnessHarmony
 ```
 
 > Requirements: DevEco Studio 4.0+, HarmonyOS SDK API 17+ (targetSdk 6.1.1(24)), Node 18+, pnpm@11, HDC.

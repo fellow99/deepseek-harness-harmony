@@ -12,7 +12,7 @@
 | 目标系统 | HarmonyOS | 6.1.0.135（API 24） | 真机验证环境 |
 | 目标 SDK | targetSdkVersion | 6.1.1(24) | build-profile.json5 |
 | 兼容 SDK | compatibleSdkVersion | 5.0.5(17) | build-profile.json5 |
-| 宿主 | deepseek-harness（dsh） | dsh-v0.1.0-rc.7（patch 基线） | agent harness（「一切皆插件」，Cordis 驱动） |
+| 宿主 | deepseek-harness（dsh） | dsh-v0.1.2-rc.1（patch 基线） | agent harness（「一切皆插件」，Cordis 驱动） |
 | 插件市场 | dsh-market | 1.26.0 | 可视化插件市场（物化为 dshmarket bundle） |
 | 架构参考 | deepseek-harness-desktop | — | 仅架构设计参考，不参与构建 |
 | 包管理 | pnpm | 11 | dsh / dsh-market 依赖安装与构建 |

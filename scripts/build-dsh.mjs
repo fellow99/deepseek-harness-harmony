@@ -13,8 +13,8 @@ import { fileURLToPath } from 'node:url';
 
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const dshRoot = resolve(projectRoot, '../deepseek-harness');
-// 补丁按 dsh 版本分目录存放；当前构建基于 dsh dsh-v0.1.0-rc.7。
-const patchDir = resolve(projectRoot, 'patches/dsh-v0.1.0-rc.7');
+// 补丁按 dsh 版本分目录存放；当前构建基于 dsh dsh-v0.1.2-rc.1。
+const patchDir = resolve(projectRoot, 'patches/dsh-v0.1.2-rc.1');
 const patchFiles = [
   resolve(patchDir, 'dsh-symlink-to-copy.patch'),
   resolve(patchDir, 'dsh-allow-all-interfaces.patch'),

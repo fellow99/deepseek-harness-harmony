@@ -60,7 +60,7 @@
 ### 4.2 build-dsh 常量
 
 - `dshRoot = ../deepseek-harness`；`marketRoot = ../dsh-market`。
-- `patchFiles`（4 个，按序）：`patches/dsh-v0.1.0-rc.7/dsh-symlink-to-copy.patch`、`patches/dsh-v0.1.0-rc.7/dsh-allow-all-interfaces.patch`、`patches/dsh-v0.1.0-rc.7/dsh-disable-hmr.patch`、`patches/dsh-v0.1.0-rc.7/dsh-disable-native-picker.patch`。
+- `patchFiles`（4 个，按序）：`patches/dsh-v0.1.2-rc.1/dsh-symlink-to-copy.patch`、`patches/dsh-v0.1.2-rc.1/dsh-allow-all-interfaces.patch`、`patches/dsh-v0.1.2-rc.1/dsh-disable-hmr.patch`、`patches/dsh-v0.1.2-rc.1/dsh-disable-native-picker.patch`。
 - 构建命令序列：`pnpm install`（node_modules 缺失时）→ `pnpm run build:lib:host` → `build:lib:client` → `build:web` → dsh-market `npm install` + `npm run build`。
 
 ### 4.3 collect-dsh 常量与产物结构
