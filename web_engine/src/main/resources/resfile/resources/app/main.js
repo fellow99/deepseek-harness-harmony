@@ -8,7 +8,7 @@
  * 5 万+ 小文件导致打包过慢/超限），首次启动解压到 userData/dsh-dist 后加载。
  */
 'use strict';
-const { app, BrowserWindow, Menu } = require('electron');
+const { app, BrowserWindow, Menu, screen } = require('electron');
 const {
   cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync,
   writeSync, openSync, closeSync, createReadStream,
@@ -486,6 +486,90 @@ function installLoopbackHeaderRewrite(win, port) {
   }
 }
 
+// ── 主窗口状态持久化 + F11 全屏 ─────────────────────────────────────
+// 记录最大化/普通（普通时含位置与尺寸），下次启动恢复；F11 切换全屏。
+function windowStateFile() {
+  return join(app.getPath('userData'), 'window-state.json');
+}
+
+function isVisibleOnSomeDisplay(bounds) {
+  return screen.getAllDisplays().some((display) => {
+    const area = display.workArea;
+    const overlapX = Math.max(
+      0,
+      Math.min(bounds.x + bounds.width, area.x + area.width) - Math.max(bounds.x, area.x),
+    );
+    const overlapY = Math.max(
+      0,
+      Math.min(bounds.y + bounds.height, area.y + area.height) - Math.max(bounds.y, area.y),
+    );
+    return overlapX > 0 && overlapY > 0;
+  });
+}
+
+function loadWindowState() {
+  try {
+    const raw = JSON.parse(readFileSync(windowStateFile(), 'utf8'));
+    const width = typeof raw.width === 'number' && raw.width > 0 ? raw.width : 1200;
+    const height = typeof raw.height === 'number' && raw.height > 0 ? raw.height : 800;
+    const state = { width, height, isMaximized: raw.isMaximized === true };
+    if (
+      typeof raw.x === 'number' &&
+      typeof raw.y === 'number' &&
+      isVisibleOnSomeDisplay({ x: raw.x, y: raw.y, width, height })
+    ) {
+      state.x = raw.x;
+      state.y = raw.y;
+    }
+    return state;
+  } catch {
+    return { width: 1200, height: 800, isMaximized: false };
+  }
+}
+
+function saveWindowState(win) {
+  if (win.isDestroyed()) return;
+  const bounds = win.getNormalBounds();
+  const state = {
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+    isMaximized: win.isMaximized(),
+  };
+  try {
+    mkdirSync(dirname(windowStateFile()), { recursive: true });
+    writeFileSync(windowStateFile(), JSON.stringify(state), 'utf8');
+  } catch (err) {
+    console.error('[dsh-harmony] 保存窗口状态失败:', err);
+  }
+}
+
+function trackWindowState(win) {
+  let timer = null;
+  const scheduleSave = () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => saveWindowState(win), 400);
+  };
+  win.on('resize', scheduleSave);
+  win.on('move', scheduleSave);
+  win.on('maximize', scheduleSave);
+  win.on('unmaximize', scheduleSave);
+  win.on('close', () => {
+    if (timer) clearTimeout(timer);
+    saveWindowState(win);
+  });
+}
+
+function installFullscreenShortcut(win) {
+  win.webContents.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown' && (input.code === 'F11' || input.key === 'F11')) {
+      event.preventDefault();
+      win.setFullScreen(!win.isFullScreen());
+    }
+  });
+}
+
 let host = null;
 
 // 去掉 Electron 默认菜单
@@ -494,14 +578,21 @@ Menu.setApplicationMenu(null);
 app.whenReady().then(async () => {
   let win;
   try {
+    const savedState = loadWindowState();
     win = new BrowserWindow({
-      width: 1200,
-      height: 800,
+      width: savedState.width,
+      height: savedState.height,
+      ...(savedState.x !== undefined && savedState.y !== undefined
+        ? { x: savedState.x, y: savedState.y }
+        : {}),
       title: 'Deepseek Harness Harmony',
       autoHideMenuBar: true,
       webPreferences: DSH_WEB_PREFERENCES,
     });
     win.setWindowButtonVisibility(true);
+    trackWindowState(win);
+    installFullscreenShortcut(win);
+    if (savedState.isMaximized) win.maximize();
   } catch (e) {
     globalThis.__winError = String(e && e.message ? e.message : e);
     console.error('[dsh-harmony] BrowserWindow 创建失败:', e);
@@ -537,7 +628,16 @@ app.whenReady().then(async () => {
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      const w = new BrowserWindow({ width: 1200, height: 800, webPreferences: DSH_WEB_PREFERENCES });
+      const st = loadWindowState();
+      const w = new BrowserWindow({
+        width: st.width,
+        height: st.height,
+        ...(st.x !== undefined && st.y !== undefined ? { x: st.x, y: st.y } : {}),
+        webPreferences: DSH_WEB_PREFERENCES,
+      });
+      trackWindowState(w);
+      installFullscreenShortcut(w);
+      if (st.isMaximized) w.maximize();
       if (host) {
         installLoopbackHeaderRewrite(w, host.port);
         void w.loadURL(host.url);
