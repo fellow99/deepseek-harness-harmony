@@ -6,7 +6,7 @@
 
 > A HarmonyOS desktop wrapper for [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) built on the "Electron-on-HarmonyOS" runtime ([harmonypc-electron](https://atomgit.com/jianguoxu/harmonypc-electron), Electron 37 / Node 22.17.0) — runs the dsh Host (with webserver) inside the Electron main process on HarmonyOS devices, and the renderer loads the dsh Web UI same-origin, 100% reusing the dsh Web UI.
 
-**Status**: ✅ Verified on device — HarmonyOS 6.1.0.135 (API 24), Electron 37 / Node 22.17.0, dsh Web UI runs normally (core chat / agent / tool calling / Web UI all functional). See [docs/工程规划.md](docs/工程规划.md) for the full engineering plan and final implementation record.
+**Version**: `0.1.0` · **Status**: ✅ Verified on device — HarmonyOS 6.1.0.135 (API 24), Electron 37 / Node 22.17.0, dsh Web UI runs normally (core chat / agent / tool calling / Web UI all functional). See [docs/工程规划.md](docs/工程规划.md) for the full engineering plan and final implementation record.
 
 ---
 

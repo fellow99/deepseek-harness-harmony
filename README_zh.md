@@ -6,7 +6,7 @@
 
 > 基于「Electron-on-鸿蒙」运行时（[harmonypc-electron](https://atomgit.com/jianguoxu/harmonypc-electron)，Electron 37 / Node 22.17.0）的 [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) 桌面封装——在鸿蒙设备的 Electron 主进程内跑 dsh Host（含 webserver），渲染进程同源加载 dsh Web UI，界面 100% 复用 dsh Web UI。
 
-**状态**：✅ 已真机验证——HarmonyOS 6.1.0.135（API 24），Electron 37 / Node 22.17.0，dsh Web UI 正常运行（核心聊天 / agent / 工具调用 / Web UI 全部可用）。完整工程规划与最终实现记录见 [docs/工程规划.md](docs/工程规划.md)。
+**版本**：`0.1.0` · **状态**：✅ 已真机验证——HarmonyOS 6.1.0.135（API 24），Electron 37 / Node 22.17.0，dsh Web UI 正常运行（核心聊天 / agent / 工具调用 / Web UI 全部可用）。完整工程规划与最终实现记录见 [docs/工程规划.md](docs/工程规划.md)。
 
 ---
 
