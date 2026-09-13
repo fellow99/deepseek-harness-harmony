@@ -13,13 +13,14 @@ import { fileURLToPath } from 'node:url';
 
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const dshRoot = resolve(projectRoot, '../deepseek-harness');
-// 补丁按 dsh 版本分目录存放；当前构建基于 dsh dsh-v0.1.2-rc.1。
-const patchDir = resolve(projectRoot, 'patches/dsh-v0.1.2-rc.1');
+// 补丁按 dsh 版本分目录存放；当前构建基于 dsh dsh-v0.1.5-rc.2。
+const patchDir = resolve(projectRoot, 'patches/dsh-v0.1.5-rc.2');
 const patchFiles = [
   resolve(patchDir, 'dsh-symlink-to-copy.patch'),
   resolve(patchDir, 'dsh-allow-all-interfaces.patch'),
   resolve(patchDir, 'dsh-disable-hmr.patch'),
   resolve(patchDir, 'dsh-disable-native-picker.patch'),
+  resolve(patchDir, 'dsh-flock-openharmony.patch'),
 ];
 
 // pnpm/tsdown 在无 TTY 时中止模块重建与依赖检查，故设 CI 使其自动处理

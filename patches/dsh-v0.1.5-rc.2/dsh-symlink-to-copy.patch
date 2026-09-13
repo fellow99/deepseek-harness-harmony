@@ -1,0 +1,46 @@
+diff --git a/packages/boot/app-boot/src/profile.ts b/packages/boot/app-boot/src/profile.ts
+index 64f65878ec..9102c2e3be 100644
+--- a/packages/boot/app-boot/src/profile.ts
++++ b/packages/boot/app-boot/src/profile.ts
+@@ -25,7 +25,7 @@
+ 
+ import { createRequire } from 'node:module'
+ import {
+-  existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync,
++  cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync,
+   symlinkSync, unlinkSync, writeFileSync,
+ } from 'node:fs'
+ import { basename, dirname, join, relative, resolve } from 'node:path'
+@@ -212,6 +212,8 @@ function ensureSymlink(link: string, target: string): void {
+     if (!stat.isSymbolicLink()) {
+       const existing = stat.isDirectory() ? readModuleProxyRecord(link) : undefined
+       if (existing?.dsh?.moduleFallback?.targets === undefined) {
++        // HarmonyOS sandbox forbids symlinks; a real directory is already materialized via copy.
++        if (stat.isDirectory()) return
+         throw new Error(`dsh: ${link} exists and is not a symlink or dsh-managed module proxy; remove it so dsh can manage the installation fallback`)
+       }
+       rmSync(link, { recursive: true })
+@@ -227,12 +229,22 @@ function ensureSymlink(link: string, target: string): void {
+   try {
+     symlinkSync(target, link, 'junction')
+   } catch (error) {
++    const code = (error as NodeJS.ErrnoException).code
++    // HarmonyOS sandbox forbids symlinks (EACCES/EPERM/ENOSYS/EOPNOTSUPP): fall back to copy materialization.
++    if (code === 'EACCES' || code === 'EPERM' || code === 'ENOSYS' || code === 'EOPNOTSUPP') {
++      cpSync(target, link, {
++        recursive: true,
++        dereference: true,
++        filter: (src) => !src.slice(target.length + 1).split(/[\\/]/).includes('node_modules'),
++      })
++      return
++    }
+     // Concurrent launches heal the same fallback; losing the race to a
+     // process writing the identical link is success, anything else is not.
+     // The window between the lstat miss above and this write cannot be
+     // staged deterministically from the public API.
+     /* v8 ignore next 4 */
+-    if ((error as NodeJS.ErrnoException).code !== 'EEXIST'
++    if (code !== 'EEXIST'
+       || !lstatSync(link).isSymbolicLink() || !symlinkPointsTo(link, target)) {
+       throw error
+     }

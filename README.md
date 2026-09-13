@@ -6,7 +6,7 @@
 
 > A HarmonyOS desktop wrapper for [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) built on the "Electron-on-HarmonyOS" runtime ([harmonypc-electron](https://atomgit.com/jianguoxu/harmonypc-electron), Electron 37 / Node 22.17.0) — runs the dsh Host (with webserver) inside the Electron main process on HarmonyOS devices, and the renderer loads the dsh Web UI same-origin, 100% reusing the dsh Web UI.
 
-**Version**: `0.1.2` · **Status**: ✅ Verified on device — HarmonyOS 6.1.0.135 (API 24), Electron 37 / Node 22.17.0, dsh Web UI runs normally (core chat / agent / tool calling / Web UI all functional). See [docs/工程规划.md](docs/工程规划.md) for the full engineering plan and final implementation record.
+**Version**: `0.1.5` · **Status**: ✅ Verified on device — HarmonyOS 6.1.0.135 (API 24), Electron 37 / Node 22.17.0, dsh Web UI runs normally (core chat / agent / tool calling / Web UI all functional). See [docs/工程规划.md](docs/工程规划.md) for the full engineering plan and final implementation record.
 
 ---
 
@@ -39,7 +39,7 @@ This project wraps the dsh Web UI in a native HarmonyOS desktop shell (Electron-
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-Key point: **the renderer loads same-origin — zero CORS, zero auth, zero custom protocol, zero IPC carrier** — reusing dsh's existing `WebApiClient` (HTTP uplink + WebSocket downlink), **zero upstream changes** (only 4 patches).
+Key point: **the renderer loads same-origin — zero CORS, zero auth, zero custom protocol, zero IPC carrier** — reusing dsh's existing `WebApiClient` (HTTP uplink + WebSocket downlink), **zero upstream changes** (only 5 patches).
 
 **Differences from desktop** (HarmonyOS-specific adaptations, see `docs/工程规划.md` §18):
 
@@ -52,6 +52,7 @@ Key point: **the renderer loads same-origin — zero CORS, zero auth, zero custo
 - ✅ dsh Web UI runs in a window (100% reuses dsh frontend)
 - ✅ Session persistence / full-text search (better-sqlite3, Electron 37 / Node ABI v138 aarch64 artifact, injected by collect-dsh)
 - ✅ Plugin marketplace (dsh-market built-in)
+- ✅ Window state persistence (maximized / bounds restored) + F11 fullscreen toggle
 - ⚠️ Image attachment validation/thumbnails (sharp pure-JS stub, no-op)
 - ❌ Terminal (bash tool, node-pty has no aarch64 artifact)
 - ❌ Process sandbox (koffi / landlock)
@@ -67,7 +68,7 @@ Key point: **the renderer loads same-origin — zero CORS, zero auth, zero custo
 
 - **Electron-on-HarmonyOS** (harmonypc-electron, Electron 37 / Node 22.17.0) — native SO + ArkTS bridge layer (aki / adapter / addon + libshim.a)
 - **ArkTS / ArkUI** (Stage model, `web_engine` HAR bridge: ~46 Adapters + ~44 AdapterBinds)
-- **deepseek-harness** (`dsh`, sibling directory `../deepseek-harness`, not a submodule, source reference) — current build is based on **`dsh-v0.1.2-rc.1`**; its patches live in `patches/dsh-v0.1.2-rc.1/`
+- **deepseek-harness** (`dsh`, sibling directory `../deepseek-harness`, not a submodule, source reference) — current build is based on **`dsh-v0.1.5-rc.2`**; its patches live in `patches/dsh-v0.1.5-rc.2/`
 - **dsh-market** (sibling directory `../dsh-market`, npm package `dshmarket`, built-in plugin marketplace)
 - **hvigor / DevEco Studio** (HAP build + signing)
 
@@ -81,15 +82,15 @@ Key point: **the renderer loads same-origin — zero CORS, zero auth, zero custo
 - **Same-origin data plane**: the renderer does `loadURL(http://<LAN IP>:<port>/)` to load the dsh Web UI same-origin, reusing `WebApiClient` — zero CORS, zero auth, zero new carrier.
 - **desktop profile**: `profiles/desktop/` (`dsh.profile.bundles = [dsh-base, dsh-web-app, dshmarket]`, cordis.patch.yml overriding `web-runtime.printUrl: false`, `webserver.host: 0.0.0.0`), copied to `$DSH_HOME/profiles/desktop` at runtime.
 
-### Build process (three stages + 4 patches)
+### Build process (three stages + 5 patches)
 
-dsh depends on Node internal APIs (HMR, native directory dialog) and conflicts with the HarmonyOS sandbox (symlink, loopback isolation), so 4 patches must be applied first (idempotent — `--reverse --check` detects already-applied and skips):
+dsh depends on Node internal APIs (HMR, native directory dialog) and conflicts with the HarmonyOS sandbox (symlink, loopback isolation), so 5 patches must be applied first (idempotent — `--reverse --check` detects already-applied and skips):
 
 ```bash
 # ① collect runtime: copy ../harmonypc-electron's electron + web_engine modules + 3 SOs + libc++_shared.so
 node scripts/collect-runtime.mjs
 
-# ② build dsh: clean workspace residue → apply 4 patches → pnpm build host/client/web → build ../dsh-market
+# ② build dsh: clean workspace residue → apply 5 patches → pnpm build host/client/web → build ../dsh-market
 node scripts/build-dsh.mjs
 
 # ③ collect dsh artifacts: pnpm deploy materialize → fill packages → sharp stub → better-sqlite3 injection → web dist + profile + dshmarket
@@ -120,19 +121,20 @@ Signing material is **externalized** so `build-profile.json5` stays secret-free 
 >
 > The `.p7b` provisioning profile is signed by Huawei — it **cannot be regenerated locally** (no local profile-signing CA; editing the SDK `Unsigned*ProfileTemplate.json` does not auto-regenerate an existing `.p7b`). Regenerate it in **DevEco Studio → File → Project Structure → Signing Configs**, with the restricted permission requested (ACL cross-level), then re-point `signing.local.json` at the new `.p7b`. See "Signing & restricted permissions" below.
 
-> **dsh version pin.** This project builds against deepseek-harness tag **`dsh-v0.1.2-rc.1`**. Patches are organized per dsh version (`patches/<dsh-tag>/`) and `scripts/build-dsh.mjs` pins `patches/dsh-v0.1.2-rc.1/` — when bumping to a new dsh tag, add a matching `patches/<new-tag>/` directory and update that pin.
+> **dsh version pin.** This project builds against deepseek-harness tag **`dsh-v0.1.5-rc.2`**. Patches are organized per dsh version (`patches/<dsh-tag>/`) and `scripts/build-dsh.mjs` pins `patches/dsh-v0.1.5-rc.2/` — when bumping to a new dsh tag, add a matching `patches/<new-tag>/` directory and update that pin.
 
 | Patch | Purpose |
 |---|---|
-| `patches/dsh-v0.1.2-rc.1/dsh-symlink-to-copy.patch` | HarmonyOS sandbox forbids symlink (`EACCES`) → fall back to `cpSync` recursive copy |
-| `patches/dsh-v0.1.2-rc.1/dsh-allow-all-interfaces.patch` | Remove webserver's `--host 0.0.0.0` rejection check (loopback isolation requires binding all interfaces + LAN IP) |
-| `patches/dsh-v0.1.2-rc.1/dsh-disable-hmr.patch` | Add `DSH_DISABLE_HMR` switch, skipping watch-only HMR (HMR depends on `--expose-internals`) |
-| `patches/dsh-v0.1.2-rc.1/dsh-disable-native-picker.patch` | Force directory-picker to use browse (native dialog worker fails to spawn under Electron) |
+| `patches/dsh-v0.1.5-rc.2/dsh-symlink-to-copy.patch` | HarmonyOS sandbox forbids symlink (`EACCES`) → fall back to `cpSync` recursive copy |
+| `patches/dsh-v0.1.5-rc.2/dsh-allow-all-interfaces.patch` | Remove webserver's `--host 0.0.0.0` rejection check (loopback isolation requires binding all interfaces + LAN IP) |
+| `patches/dsh-v0.1.5-rc.2/dsh-disable-hmr.patch` | Add `DSH_DISABLE_HMR` switch, skipping watch-only HMR (HMR depends on `--expose-internals`) |
+| `patches/dsh-v0.1.5-rc.2/dsh-disable-native-picker.patch` | Force directory-picker to use browse (native dialog worker fails to spawn under Electron) |
+| `patches/dsh-v0.1.5-rc.2/dsh-flock-openharmony.patch` | Grant the POSIX flock write lock in-process on `openharmony` (no native addon; single-process host, same rationale as dsh's browser-worker stub) |
 
 **Prerequisite — sibling source checkouts.** This project consumes 3 sibling projects (not submodules); clone them next to this project before building:
 
 ```bash
-git clone --branch dsh-v0.1.2-rc.1 https://github.com/deepseek-ai/deepseek-harness.git ../deepseek-harness
+git clone --branch dsh-v0.1.5-rc.2 https://github.com/deepseek-ai/deepseek-harness.git ../deepseek-harness
 git clone --branch v1.26.0           https://github.com/dsh-market/dsh-market.git       ../dsh-market
 # ../harmonypc-electron is the Electron-on-HarmonyOS runtime project; extract the Electron 37 build artifacts to supply the 3 SOs
 ```
@@ -217,7 +219,7 @@ This project and the 3 consumed projects plus 1 architecture-reference project l
 │   ├── src-main/                  # Main process main.js (extract + runProfile + loadURL + HarmonyOS adaptations)
 │   ├── scripts/                   # Three-stage build: collect-runtime → build-dsh → collect-dsh
 │   ├── profiles/desktop/          # Custom desktop profile (cordis.patch.yml + package.json)
-│   ├── patches/                   # dsh upstream patches (4)
+│   ├── patches/                   # dsh upstream patches (5)
 │   ├── docs/                      # Engineering plan and final implementation record
 │   └── specs/                     # Spec documents (as-built; see specs/README.md for index)
 │

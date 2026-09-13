@@ -26,3 +26,6 @@ signing.local.json
 
 # 本地签名材料目录（.p12/.cer/.p7b/.csr + material 解密密钥链，绝不入库）
 /.ohos/
+
+# 阶段日志与证据（构建日志、截图、报告）— 入库策略同 desktop，不入库
+/logs/

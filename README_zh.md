@@ -6,7 +6,7 @@
 
 > 基于「Electron-on-鸿蒙」运行时（[harmonypc-electron](https://atomgit.com/jianguoxu/harmonypc-electron)，Electron 37 / Node 22.17.0）的 [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) 桌面封装——在鸿蒙设备的 Electron 主进程内跑 dsh Host（含 webserver），渲染进程同源加载 dsh Web UI，界面 100% 复用 dsh Web UI。
 
-**版本**：`0.1.2` · **状态**：✅ 已真机验证——HarmonyOS 6.1.0.135（API 24），Electron 37 / Node 22.17.0，dsh Web UI 正常运行（核心聊天 / agent / 工具调用 / Web UI 全部可用）。完整工程规划与最终实现记录见 [docs/工程规划.md](docs/工程规划.md)。
+**版本**：`0.1.5` · **状态**：✅ 已真机验证——HarmonyOS 6.1.0.135（API 24），Electron 37 / Node 22.17.0，dsh Web UI 正常运行（核心聊天 / agent / 工具调用 / Web UI 全部可用）。完整工程规划与最终实现记录见 [docs/工程规划.md](docs/工程规划.md)。
 
 ---
 
@@ -39,7 +39,7 @@ dsh 已完成 **Host/Client 分层**，其 webserver **同时服务 SPA dist 与
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-关键点：**渲染进程同源加载——零 CORS、零鉴权、零自定义协议、零 IPC 载体**——复用 dsh 现有 `WebApiClient`（HTTP 上行 + WebSocket 下行），**对 dsh 零上游改动**（仅 4 个 patch）。
+关键点：**渲染进程同源加载——零 CORS、零鉴权、零自定义协议、零 IPC 载体**——复用 dsh 现有 `WebApiClient`（HTTP 上行 + WebSocket 下行），**对 dsh 零上游改动**（仅 5 个 patch）。
 
 **与 desktop 的差异**（鸿蒙独有适配，详见 `docs/工程规划.md` §18）：
 
@@ -52,6 +52,7 @@ dsh 已完成 **Host/Client 分层**，其 webserver **同时服务 SPA dist 与
 - ✅ dsh Web UI 在窗口内运行（100% 复用 dsh 前端）
 - ✅ 会话持久化 / 全文搜索（better-sqlite3，Electron 37 / Node ABI v138 aarch64 成品，由 collect-dsh 注入）
 - ✅ 插件市场（dsh-market 内置）
+- ✅ 窗口状态持久化（最大化/位置尺寸）+ F11 全屏
 - ⚠️ 图片附件校验/缩略图（sharp 纯 JS stub，no-op）
 - ❌ 终端（bash 工具，node-pty 无 aarch64 产物）
 - ❌ 进程沙箱（koffi / landlock）
@@ -67,7 +68,7 @@ dsh 已完成 **Host/Client 分层**，其 webserver **同时服务 SPA dist 与
 
 - **Electron-on-鸿蒙**（harmonypc-electron，Electron 37 / Node 22.17.0）—— 原生 SO + ArkTS 桥接层（aki / adapter / addon + libshim.a）
 - **ArkTS / ArkUI**（Stage 模型，`web_engine` HAR 桥接：~46 Adapter + ~44 AdapterBind）
-- **deepseek-harness**（`dsh`，同级目录 `../deepseek-harness`，非 submodule，源码引用）—— 当前构建基于 **`dsh-v0.1.2-rc.1`**，其补丁位于 `patches/dsh-v0.1.2-rc.1/`
+- **deepseek-harness**（`dsh`，同级目录 `../deepseek-harness`，非 submodule，源码引用）—— 当前构建基于 **`dsh-v0.1.5-rc.2`**，其补丁位于 `patches/dsh-v0.1.5-rc.2/`
 - **dsh-market**（同级目录 `../dsh-market`，npm 包 `dshmarket`，内置插件市场）
 - **hvigor / DevEco Studio**（HAP 构建 + 签名）
 
@@ -81,15 +82,15 @@ dsh 已完成 **Host/Client 分层**，其 webserver **同时服务 SPA dist 与
 - **同源数据面**：渲染进程 `loadURL(http://<局域网 IP>:<port>/)` 同源加载 dsh Web UI，复用 `WebApiClient`——零 CORS、零鉴权、零新载体。
 - **desktop profile**：`profiles/desktop/`（`dsh.profile.bundles = [dsh-base, dsh-web-app, dshmarket]`，cordis.patch.yml 覆盖 `web-runtime.printUrl: false`、`webserver.host: 0.0.0.0`），运行时复制到 `$DSH_HOME/profiles/desktop`。
 
-### 构建流程（三阶段 + 4 个 patch）
+### 构建流程（三阶段 + 5 个 patch）
 
-dsh 依赖的 Node 内建 API（HMR、原生目录对话框）与鸿蒙沙箱（symlink、loopback 隔离）冲突，需先应用 4 个 patch（幂等——`--reverse --check` 检测已应用则跳过）：
+dsh 依赖的 Node 内建 API（HMR、原生目录对话框）与鸿蒙沙箱（symlink、loopback 隔离）冲突，需先应用 5 个 patch（幂等——`--reverse --check` 检测已应用则跳过）：
 
 ```bash
 # ① 收集运行时：copy ../harmonypc-electron 的 electron + web_engine 模块 + 3 个 SO + libc++_shared.so
 node scripts/collect-runtime.mjs
 
-# ② 构建 dsh：清理 workspace 残留 → apply 4 patch → pnpm build host/client/web → build ../dsh-market
+# ② 构建 dsh：清理 workspace 残留 → apply 5 patch → pnpm build host/client/web → build ../dsh-market
 node scripts/build-dsh.mjs
 
 # ③ 收集 dsh 产物：pnpm deploy 物化 → 补包 → sharp stub → better-sqlite3 注入 → web dist + profile + dshmarket
@@ -102,19 +103,20 @@ tar -czf web_engine/src/main/resources/resfile/resources/app/dsh-dist.tar.gz --f
 #    NODE_HOME=<DevEco>/tools/node DEVECO_SDK_HOME=<sdk>  ohpm install  hvigorw assembleHap --mode module -p product=default -p buildMode=debug --no-daemon
 ```
 
-> **dsh 版本锚定**：本工程基于 deepseek-harness tag **`dsh-v0.1.2-rc.1`** 构建。补丁按 dsh 版本分目录存放（`patches/<dsh-tag>/`），`scripts/build-dsh.mjs` 固定指向 `patches/dsh-v0.1.2-rc.1/` —— 升级到新的 dsh tag 时，需新增对应的 `patches/<新 tag>/` 目录并更新该指向。
+> **dsh 版本锚定**：本工程基于 deepseek-harness tag **`dsh-v0.1.5-rc.2`** 构建。补丁按 dsh 版本分目录存放（`patches/<dsh-tag>/`），`scripts/build-dsh.mjs` 固定指向 `patches/dsh-v0.1.5-rc.2/` —— 升级到新的 dsh tag 时，需新增对应的 `patches/<新 tag>/` 目录并更新该指向。
 
 | Patch | 目的 |
 |---|---|
-| `patches/dsh-v0.1.2-rc.1/dsh-symlink-to-copy.patch` | 鸿蒙沙箱禁 symlink（`EACCES`）→ 回退 `cpSync` 递归拷贝 |
-| `patches/dsh-v0.1.2-rc.1/dsh-allow-all-interfaces.patch` | 移除 webserver `--host 0.0.0.0` 拒绝检查（loopback 隔离需绑全网卡 + 局域网 IP） |
-| `patches/dsh-v0.1.2-rc.1/dsh-disable-hmr.patch` | `DSH_DISABLE_HMR` 开关，跳过依赖 `--expose-internals` 的 watch-only HMR |
-| `patches/dsh-v0.1.2-rc.1/dsh-disable-native-picker.patch` | 目录选择器走 browse（原生 dialog worker 在 Electron 下 spawn 失败） |
+| `patches/dsh-v0.1.5-rc.2/dsh-symlink-to-copy.patch` | 鸿蒙沙箱禁 symlink（`EACCES`）→ 回退 `cpSync` 递归拷贝 |
+| `patches/dsh-v0.1.5-rc.2/dsh-allow-all-interfaces.patch` | 移除 webserver `--host 0.0.0.0` 拒绝检查（loopback 隔离需绑全网卡 + 局域网 IP） |
+| `patches/dsh-v0.1.5-rc.2/dsh-disable-hmr.patch` | `DSH_DISABLE_HMR` 开关，跳过依赖 `--expose-internals` 的 watch-only HMR |
+| `patches/dsh-v0.1.5-rc.2/dsh-disable-native-picker.patch` | 目录选择器走 browse（原生 dialog worker 在 Electron 下 spawn 失败） |
+| `patches/dsh-v0.1.5-rc.2/dsh-flock-openharmony.patch` | openharmony 平台以进程内方式放行 POSIX flock 写锁（无原生插件；单进程宿主，同 dsh 浏览器 worker stub 语义） |
 
 **前置——同级工程 checkout**：本工程消费 3 个同级工程（非 submodule），构建前需放到同级目录：
 
 ```bash
-git clone --branch dsh-v0.1.2-rc.1 https://github.com/deepseek-ai/deepseek-harness.git ../deepseek-harness
+git clone --branch dsh-v0.1.5-rc.2 https://github.com/deepseek-ai/deepseek-harness.git ../deepseek-harness
 git clone --branch v1.26.0           https://github.com/dsh-market/dsh-market.git       ../dsh-market
 # ../harmonypc-electron 为 Electron-on-鸿蒙运行时工程，需解压 Electron 37 编译产物补齐 3 个 SO
 ```
@@ -145,7 +147,7 @@ hdc shell aa start -a EntryAbility -b org.fellow99.DeepseekHarnessHarmony
 │   ├── src-main/                  # 主进程 main.js（解压 + runProfile + loadURL + 鸿蒙适配）
 │   ├── scripts/                   # 三阶段构建：collect-runtime → build-dsh → collect-dsh
 │   ├── profiles/desktop/          # 自定义 desktop profile（cordis.patch.yml + package.json）
-│   ├── patches/                   # dsh 上游 patch（4 个）
+│   ├── patches/                   # dsh 上游 patch（5 个）
 │   ├── docs/                      # 工程规划与最终实现记录
 │   └── specs/                     # 规范文档（as-built；见 specs/README.md 索引）
 │
