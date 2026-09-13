@@ -38,6 +38,14 @@
 - id: permission
   disabled: true
 
+# 鸿蒙桌面版：dsh 0.1.5-rc.2 起 host-open-in-app 注入 subprocess 服务（用于探测/启动本机应用），
+# 而本平台已禁用 subprocess（node-pty 无 aarch64 产物），该行会持续 pending 导致整棵插件树
+# 加载失败（boot: 1 entry did not activate）。鸿蒙无「本机应用打开」语义，故禁用其 host/client 两半。
+- id: open-in-app
+  disabled: true
+- id: ui-open-in-app
+  disabled: true
+
 # 鸿蒙桌面版：强制 webserver 绑定 0.0.0.0（全网卡）。
 # 鸿蒙 NEXT 下 Chromium 渲染进程访问 127.0.0.1 存在 loopback 网络隔离，渲染进程须走局域网 IP。
 # 用 profile 覆盖直接设 host（literal），绕过 --host 参数解析。

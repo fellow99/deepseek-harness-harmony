@@ -1,0 +1,19 @@
+diff --git a/native/system/packages/entry/src/flock.ts b/native/system/packages/entry/src/flock.ts
+index fcbf8a9e3c..39731365d0 100644
+--- a/native/system/packages/entry/src/flock.ts
++++ b/native/system/packages/entry/src/flock.ts
+@@ -12,6 +12,14 @@ let binding: FlockBinding | undefined
+ function loadBinding(): FlockBinding {
+   if (binding) return binding
+   const { platform, arch } = process
++  // HarmonyOS (Electron-on-Harmony) ships no flock addon and the OS rejects
++  // flock(2). The host is a single process, so the in-process write claim
++  // already excludes every writer — the same rationale behind the browser
++  // worker's stubbed flock entry. Grant acquisition without a kernel lock.
++  if (String(platform) === 'openharmony') {
++    binding = { tryLock: (_fd: number, callback: (errno: number) => void) => { callback(0) } }
++    return binding
++  }
+   if (platform !== 'linux' && platform !== 'darwin') {
+     throw Object.assign(new Error(`flock is not supported on ${platform}-${arch}`), {
+       code: 'ERR_FLOCK_UNSUPPORTED_PLATFORM',
