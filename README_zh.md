@@ -180,3 +180,7 @@ hdc shell aa start -a EntryAbility -b org.fellow99.DeepseekHarnessHarmony
 - [dsh-market](https://github.com/dsh-market/dsh-market)（同级目录 `../dsh-market`）—— 内置插件市场（npm 包 `dshmarket`），经 `collect-dsh.mjs` 物化
 - [harmonypc-electron](https://atomgit.com/jianguoxu/harmonypc-electron)（同级目录 `../harmonypc-electron`）—— Electron-on-鸿蒙运行时
 - [deepseek-harness-desktop](https://github.com/fellow99/deepseek-harness-desktop)（同级目录 `../deepseek-harness-desktop`）—— 架构设计参考（Electron 桌面壳）
+
+## 许可证
+
+[MIT](LICENSE) © 2026 fellow99

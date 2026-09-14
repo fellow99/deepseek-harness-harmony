@@ -252,3 +252,7 @@ This project and the 3 consumed projects plus 1 architecture-reference project l
 - [dsh-market](https://github.com/dsh-market/dsh-market) (sibling directory `../dsh-market`) — the built-in visual plugin marketplace (npm package `dshmarket`), materialized via `collect-dsh.mjs`
 - [harmonypc-electron](https://atomgit.com/jianguoxu/harmonypc-electron) (sibling directory `../harmonypc-electron`) — the Electron-on-HarmonyOS runtime
 - [deepseek-harness-desktop](https://github.com/fellow99/deepseek-harness-desktop) (sibling directory `../deepseek-harness-desktop`) — architecture-design reference (Electron desktop shell)
+
+## License
+
+[MIT](LICENSE) © 2026 fellow99
