@@ -19,14 +19,24 @@
 # 用法（在工程根目录）：
 #   powershell -ExecutionPolicy Bypass -File scripts\build-hap.ps1
 #   # 可选参数：
-#   #   -BuildMode debug|release     默认 debug
+#   #   -Task Hap|App                 默认 Hap；App=应用级 App Pack（应用市场上架用 .app）
+#   #   -BuildMode debug|release      默认 debug（App 上架应使用 release）
 #   #   -JbrHome  <JBR 根目录>        默认从常见 DevEco 安装路径探测
 #   #   -SdkHome  <sdk 目录>          默认 D:\oh-workspace\deveco-studio-6\sdk
 #   #   -NodeHome <node 目录>         默认 <DevEco>\tools\node
+#
+# 任务说明：
+#   Hap → hvigor `assembleHap --mode module`，产出 electron\build\default\outputs\default\electron-default-signed.hap（真机装机）
+#   App → hvigor `assembleApp  --mode project`，产出 build\outputs\default\*-signed.app（应用市场提交）
+#         注意：应用市场只接受「发布证书 + 发布 Profile」签名的包；调试材料（keyAlias=debugKey）签出的
+#         .app 仅可用于本地验证，无法上架。发布材料经环境变量或 signing.local.json 注入（见 hvigorfile.ts）。
 # ============================================================================
 
 [CmdletBinding()]
 param(
+    [ValidateSet('Hap', 'App')]
+    [string]$Task = 'Hap',
+
     [ValidateSet('debug', 'release')]
     [string]$BuildMode = 'debug',
 
@@ -88,14 +98,52 @@ if (-not (Test-Path (Join-Path $projectRoot 'signing.local.json'))) {
 }
 
 # --- 5. 执行 hvigor 构建 ------------------------------------------------------
-Write-Host "`n=== hvigorw assembleHap (buildMode=$BuildMode) ===" -ForegroundColor Green
-& $Hvigorw assembleHap --mode module -p product=default -p buildMode=$BuildMode --no-daemon
+# Hap：模块级包（真机装机/调试）→ assembleHap（--mode module）
+# App：应用级 App Pack（应用市场提交）→ assembleApp（--mode project）
+if ($Task -eq 'App') {
+    $hvigorTask = 'assembleApp'
+    $hvigorMode = 'project'
+    if ($BuildMode -ne 'release') {
+        Write-Warning "App Pack 用于应用市场上架时应使用 -BuildMode release（当前 $BuildMode）。"
+    }
+    $signingLocal = Join-Path $projectRoot 'signing.local.json'
+    if (Test-Path $signingLocal) {
+        try {
+            $mat = Get-Content -LiteralPath $signingLocal -Raw | ConvertFrom-Json
+            if ($mat.keyAlias -eq 'debugKey') {
+                Write-Warning "signing.local.json 的 keyAlias 为 debugKey（调试证书）——应用市场只接受发布证书/Profile 签名，此 .app 仅供本地验证。"
+            }
+        } catch {
+            Write-Warning "signing.local.json 解析失败，已跳过发布材料检查：$($_.Exception.Message)"
+        }
+    } else {
+        Write-Warning "未找到 signing.local.json，且未提供签名环境变量：将产出未签名/调试签名的 App Pack，无法上架。"
+    }
+} else {
+    $hvigorTask = 'assembleHap'
+    $hvigorMode = 'module'
+}
+Write-Host "`n=== hvigorw $hvigorTask (task=$Task, buildMode=$BuildMode) ===" -ForegroundColor Green
+& $Hvigorw $hvigorTask --mode $hvigorMode -p product=default -p buildMode=$BuildMode --no-daemon
 if ($LASTEXITCODE -ne 0) { throw "hvigorw 构建失败（exit $LASTEXITCODE）" }
 
-$hap = Join-Path $projectRoot 'electron\build\default\outputs\default\electron-default-signed.hap'
-if (Test-Path $hap) {
-    $size = [math]::Round((Get-Item $hap).Length / 1MB, 1)
-    Write-Host "`n✅ 已签名 HAP：$hap ($size MB)" -ForegroundColor Green
+# --- 6. 汇报产物 --------------------------------------------------------------
+if ($Task -eq 'App') {
+    $appDir = Join-Path $projectRoot 'build\outputs\default'
+    $app = Get-ChildItem -Path $appDir -Filter '*-signed.app' -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($app) {
+        $size = [math]::Round($app.Length / 1MB, 1)
+        Write-Host "`n✅ 已签名 App Pack（应用市场提交）：$($app.FullName) ($size MB)" -ForegroundColor Green
+    } else {
+        Write-Warning "构建成功但未找到 signed .app：$appDir\*-signed.app"
+    }
 } else {
-    Write-Warning "构建成功但未找到 signed.hap：$hap"
+    $hap = Join-Path $projectRoot 'electron\build\default\outputs\default\electron-default-signed.hap'
+    if (Test-Path $hap) {
+        $size = [math]::Round((Get-Item $hap).Length / 1MB, 1)
+        Write-Host "`n✅ 已签名 HAP：$hap ($size MB)" -ForegroundColor Green
+    } else {
+        Write-Warning "构建成功但未找到 signed.hap：$hap"
+    }
 }
