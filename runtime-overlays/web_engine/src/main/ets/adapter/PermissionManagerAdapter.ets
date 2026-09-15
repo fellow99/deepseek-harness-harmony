@@ -66,7 +66,7 @@ export class PermissionManagerAdapter extends BaseAdapter {
   private ctxAdapter: ContextAdapter;
   private isInitialized: boolean = false;
   private appLabelId: number = 0;
-  private bundleName: string = 'org.fellow99.DeepseekHarnessHarmony';
+  private bundleName: string = 'com.huawei.ohos_electron';
   private bundleFlags = bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION |
                         bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_METADATA;
 

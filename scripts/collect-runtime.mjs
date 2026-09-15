@@ -5,12 +5,13 @@
  * 固定阶段流水线，任一阶段失败即非零退出：
  *   0 清单加载与前置校验：读取子工程 ohos_hap/runtime-manifest.json、DEVECO_SDK_HOME、3 个 .so
  *   1 拷贝运行时：../harmonypc-electron/ohos_hap 的 electron + web_engine（剔除生成物目录）
+ *   1b 剪裁本应用不需要的运行时文件：删除 PRUNE_FILES（缺失即硬失败，防上游外壳结构漂移）
  *   2 恢复 App 主进程三件套：src-main/{main.js,renderer-preload.js,package.json}
- *   3 应用 App 配置 overlay：runtime-overlays/ 白名单文件回盖（缺失即硬失败）
+ *   3 应用 App 定制 overlay：runtime-overlays/ 白名单文件回盖，含 HAR 权限表 + adapter/jsbindings 定制 + locale 资源（缺失即硬失败）
  *   4 bundleName 字面量替换：4 个 adapter 中通用 bundleName → App bundleName（次数断言）
  *   5 清理 system-info demo 残留：resfile/resources/app 保留白名单之外全部删除并显式列出
  *   6 注入 libc++_shared.so（DevEco SDK）
- *   7 一致性守卫：.so 哈希 / 新壳 markers / barrel 导出 / App 身份 / demo 残留 / overlay 命中
+ *   7 一致性守卫：.so 哈希 / 新壳 markers / barrel 导出 / App 身份 / demo 残留 / overlay 命中 / 剪裁 / 前置 overlay 改写
  *
  * 用法：
  *   node scripts/collect-runtime.mjs                 原地更新本工程（默认）
@@ -50,11 +51,42 @@ const targetRoot = OUT_DIR ?? harmonyRoot;
 
 const EXCLUDE_TOP = new Set(['build', 'oh_modules', 'node_modules', '.git', '.hvigor', '.idea', '.codegraph']);
 
-/** App 配置 overlay 白名单（相对工程/目标根的镜像路径，恰好 3 个） */
+/**
+ * App 配置 overlay 白名单（相对工程/目标根的镜像路径）。
+ * 共 8 个，均为本 App 自身的定制：HAR 权限表 + 3 个 adapter/jsbindings 定制 + 3 个 locale 资源。
+ * 全部由阶段 7.6 做源/目标 md5 一致性守卫。
+ */
 const OVERLAY_FILES = [
   'electron/src/main/module.json5',
   'web_engine/src/main/module.json5',
   'electron/src/main/resources/base/profile/shortcuts_config.json',
+  'web_engine/src/main/ets/adapter/MediaAdapter.ets',
+  'web_engine/src/main/ets/jsbindings/JsBindingMethod.ets',
+  'web_engine/src/main/resources/base/element/string.json',
+  'web_engine/src/main/resources/en_US/element/string.json',
+  'web_engine/src/main/resources/zh_CN/element/string.json',
+];
+
+/**
+ * 回盖时机早于阶段 4（bundleName 字面量替换）的 overlay：
+ * 这份副本必须保留「通用」bundleName（manifest.bundleNameRewrite.from），
+ * 由阶段 4 再替换成 App bundleName，因此**不能**纳入阶段 7.6 的 md5 一致性守卫
+ * （回盖后目标文件会被阶段 4 改写，源与目标必然不同）。其正确性由阶段 7.4
+ * （4 个 adapter 已无通用字面量残留）保障。
+ */
+const OVERLAY_PRE_REWRITE_FILES = [
+  'web_engine/src/main/ets/adapter/PermissionManagerAdapter.ets',
+];
+
+/**
+ * 本应用不需要、必须在拷贝后删除的运行时文件。
+ * 删除前断言其存在：缺失说明上游外壳结构已变化，必须重新评估（不得静默跳过）。
+ */
+const PRUNE_FILES = [
+  'web_engine/src/main/ets/adapter/BluetoothAdapter.ets',
+  'web_engine/src/main/ets/adapter/BluetoothLowEnergyAdapter.ets',
+  'web_engine/src/main/ets/jsbindings/BluetoothAdapterBind.ets',
+  'web_engine/src/main/ets/jsbindings/BluetoothLowEnergyAdapterBind.ets',
 ];
 
 /** resfile/resources/app 保留白名单（dsh-dist.tar.gz 在 collect-dsh 之后才存在，缺失允许） */
@@ -183,6 +215,20 @@ function stage1CopyRuntime() {
   for (const m of ['electron', 'web_engine']) copyModule(m);
 }
 
+// ---------------------------------------------------------------- 阶段 1b
+
+function stage1bPruneRuntime() {
+  stageBanner('1b', '剪裁本应用不需要的运行时文件');
+  for (const rel of PRUNE_FILES) {
+    const p = resolve(targetRoot, rel);
+    if (!existsSync(p)) {
+      fail(`待剪裁文件缺失（上游外壳结构可能已变化）: ${p}\n  请重新评估 PRUNE_FILES 是否仍然需要。`);
+    }
+    rmSync(p, { force: true });
+    log('1b', `已删除 ${rel}`);
+  }
+}
+
 // ---------------------------------------------------------------- 阶段 2
 
 function restoreOne(srcRel, destRel, label) {
@@ -205,7 +251,7 @@ function stage2RestoreAppTriple() {
 
 function stage3ApplyOverlays() {
   stageBanner(3, '应用 App 配置 overlay');
-  for (const rel of OVERLAY_FILES) {
+  for (const rel of [...OVERLAY_FILES, ...OVERLAY_PRE_REWRITE_FILES]) {
     const src = resolve(harmonyRoot, 'runtime-overlays', rel);
     const dest = resolve(targetRoot, rel);
     if (!existsSync(src)) fail(`overlay 源缺失（App 定制丢失）: ${src}`);
@@ -348,6 +394,22 @@ function stage7Guards(manifest) {
     guard(ok, `overlay 命中 ${rel}`);
   }
 
+  // 7.8 App 剪裁：不需要的运行时文件必须不存在
+  for (const rel of PRUNE_FILES) {
+    guard(!existsSync(resolve(targetRoot, rel)), `已剪裁 ${rel}`);
+  }
+
+  // 7.9 阶段 4 前置 overlay：源保留通用字面量、目标已改写为 App bundleName
+  const genericLiteral = manifest.bundleNameRewrite?.from ?? 'com.huawei.ohos_electron';
+  const appBundle = readAppBundleName();
+  for (const rel of OVERLAY_PRE_REWRITE_FILES) {
+    const src = resolve(harmonyRoot, 'runtime-overlays', rel);
+    const dest = resolve(targetRoot, rel);
+    guard(existsSync(src) && readText(src).includes(genericLiteral), `overlay 源保留通用字面量 ${rel.split('/').pop()}`);
+    guard(existsSync(dest) && !readText(dest).includes(genericLiteral), `目标已无通用字面量 ${rel.split('/').pop()}`);
+    guard(existsSync(dest) && readText(dest).includes(appBundle), `目标含 App bundleName ${rel.split('/').pop()}`);
+  }
+
   // 7.7 libc++ 注入哈希（若清单记录）
   if (manifest.libcxx?.md5) {
     const p = resolve(targetRoot, manifest.libcxx.path);
@@ -364,6 +426,7 @@ function main() {
   const manifest = stage0Load();
   if (!VERIFY_ONLY) {
     stage1CopyRuntime();
+    stage1bPruneRuntime();
     stage2RestoreAppTriple();
     stage3ApplyOverlays();
     stage4RewriteBundleName(manifest);

@@ -13,20 +13,8 @@
       "value": "cancel"
     },
     {
-      "name": "camera",
-      "value": "Camera requires user_grant permission"
-    },
-    {
-      "name": "microphone",
-      "value": "Microphone requires user_grant permission"
-    },
-    {
       "name": "access_pasteboard",
-      "value": "Pasteboard requires user_grant permission"
-    },
-    {
-      "name": "location",
-      "value": "Geolocation requires user_grant permission"
+      "value": "Used to paste clipboard text or images into the chat input box"
     },
     {
       "name": "distributed_datasync",
@@ -34,15 +22,15 @@
     },
     {
       "name": "download_dir",
-      "value": "Download requires user_grant permission"
+      "value": "Used to open or save files in the Downloads folder from the in-app file picker"
     },
     {
       "name": "documents_dir",
-      "value": "Documents requires user_grant permission"
+      "value": "Used to open or save files in the Documents folder from the in-app file picker"
     },
     {
       "name": "desktop_dir",
-      "value": "Desktop requires user_grant permission"
+      "value": "Used to open or save files in the Desktop folder from the in-app file picker"
     },
     {
       "name": "upload_default_type_description",
@@ -51,10 +39,6 @@
     {
       "name": "upload_all_file_description",
       "value": "all file(*.*)"
-    },
-    {
-      "name": "access_bluetooth",
-      "value": "Used to access bluetooth"
     },
     {
       "name": "print_title",
@@ -70,7 +54,7 @@
     },
     {
       "name": "screen_capture",
-      "value": "Screen Capture requires user_grant permission"
+      "value": "Used for the in-app screenshot feature"
     },
     {
       "name": "screenshot",

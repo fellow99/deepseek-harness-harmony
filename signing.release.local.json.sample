@@ -1,0 +1,15 @@
+{
+  "_说明": "RELEASE 签名材料：复制本文件为 signing.release.local.json 并填入真实值。signing.release.local.json 已被 gitignore，不入库。",
+  "_用途": "release 构建/上架使用。hvigorfile.ts 在 SIGN_MODE=release 时读取此文件注入 signingConfigs。",
+  "_路径": "certpath/storeFile/profile 写相对工程根目录的路径，通常放在 .ohos/release/ 下（也可写绝对路径）。",
+  "_证书": "AppGallery 上架需要华为签发的 release 证书 + release 描述文件（provisioning profile，.p7b），keyAlias 通常为 release_key，不能复用本地 debug 的 debugKey。",
+  "_密码": "keyPassword/storePassword 必须是 hvigor DecipherUtil 的 AES-GCM 密文（≥32位 hex，非明文）；且 .p12 同级目录需有 material/{fd,ac,ce} 密钥链。",
+  "_获取": "从华为 AGC（AppGallery Connect）申请 release 证书 + 发布证书 profile 后，用 hap-sign-tool 生成签名材料，或从 DevEco 生成的构建配置中取得这些值。",
+  "certpath": ".ohos/release/<app>-release.cer",
+  "storeFile": ".ohos/release/release.p12",
+  "profile": ".ohos/release/<app>-releaseRelease.p7b",
+  "keyAlias": "release_key",
+  "keyPassword": "<hvigor DecipherUtil AES-GCM ciphertext, >=32 hex chars>",
+  "storePassword": "<hvigor DecipherUtil AES-GCM ciphertext, >=32 hex chars>",
+  "signAlg": "SHA256withECDSA"
+}

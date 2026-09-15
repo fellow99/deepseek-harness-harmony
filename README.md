@@ -10,6 +10,17 @@
 
 ---
 
+## Current versions
+
+| Field | Value |
+|---|---|
+| `versionName` | `0.1.5` |
+| `versionCode` | `1005` |
+
+Source: `AppScope/app.json5`. `versionCode` must be a number and must **strictly increase** on every AppGallery submission — see [AppGallery submission](#appgallery-submission).
+
+---
+
 ## What is this
 
 DeepSeek Harness (`dsh`) is an open-source agent harness by DeepSeek AI, built on an "everything is a plugin" architecture (driven by [Cordis](https://github.com/cordiverse/cordis)); its native entry is `dsh web` (a browser Web UI).
@@ -62,7 +73,7 @@ Key point: **the renderer loads same-origin — zero CORS, zero auth, zero custo
 ## Target platforms & distribution
 
 - **Platforms**: HarmonyOS 2in1 / tablet (`deviceTypes: ["2in1", "tablet"]`)
-- **Distribution**: local signed HAP for personal use (DevEco auto-signing + Huawei cert); no store distribution, auto-update, or code signing yet
+- **Distribution**: local debug-signed HAP for development (DevEco auto-signing + Huawei cert) **and AppGallery submission** — release-signed App Pack (`.app`) built with a Huawei-issued release certificate + release profile (see [AppGallery submission](#appgallery-submission)). Auto-update is not implemented yet.
 
 ## Tech stack
 
@@ -82,44 +93,77 @@ Key point: **the renderer loads same-origin — zero CORS, zero auth, zero custo
 - **Same-origin data plane**: the renderer does `loadURL(http://<LAN IP>:<port>/)` to load the dsh Web UI same-origin, reusing `WebApiClient` — zero CORS, zero auth, zero new carrier.
 - **desktop profile**: `profiles/desktop/` (`dsh.profile.bundles = [dsh-base, dsh-web-app, dshmarket]`, cordis.patch.yml overriding `web-runtime.printUrl: false`, `webserver.host: 0.0.0.0`), copied to `$DSH_HOME/profiles/desktop` at runtime.
 
-### Build process (three stages + 6 patches)
+### Build process (four stages + 6 patches)
 
 dsh depends on Node internal APIs (HMR, native directory dialog) and conflicts with the HarmonyOS sandbox (symlink, loopback isolation), so 6 patches must be applied first (idempotent — `--reverse --check` detects already-applied and skips):
 
+The pipeline is **four stages** (⓪–③), followed by the local build + signing step (④). Stage ⓪ is the runtime sync: it force-copies the upstream runtime **and re-applies this app's own customizations** (prune + overlay), so it must always be the first thing that runs.
+
 ```bash
-# ① collect runtime: copy ../harmonypc-electron's electron + web_engine modules + 3 SOs + libc++_shared.so
+# ⓪ sync runtime + re-apply app customizations: copy ../harmonypc-electron's electron + web_engine
+#    modules + 3 SOs + libc++_shared.so, prune unwanted upstream files, then overlay runtime-overlays/
 node scripts/collect-runtime.mjs
 
-# ② build dsh: clean workspace residue → apply 6 patches → pnpm build host/client/web → build ../dsh-market
+# ① build dsh: clean workspace residue → apply 6 patches → pnpm build host/client/web → build ../dsh-market
 node scripts/build-dsh.mjs
 
-# ③ collect dsh artifacts: pnpm deploy materialize → fill packages → sharp stub → better-sqlite3 injection → web dist + profile + dshmarket
+# ② collect dsh artifacts: pnpm deploy materialize → fill packages → sharp stub → better-sqlite3 injection → web dist + profile + dshmarket
 node scripts/collect-dsh.mjs
 
-# ④ compress dsh-dist into dsh-dist.tar.gz (--format=ustar, ~143MB, streaming decompression at runtime)
+# ③ compress dsh-dist into dsh-dist.tar.gz (--format=ustar, ~143MB, streaming decompression at runtime)
 tar -czf web_engine/src/main/resources/resfile/resources/app/dsh-dist.tar.gz --format=ustar -C . dsh-dist
 
-# ⑤ build + sign HAP (recommended: the project's build-hap.ps1, which uses DevEco's JBR)
-#    powershell -ExecutionPolicy Bypass -File scripts\build-hap.ps1            # debug (default)
-#    powershell -ExecutionPolicy Bypass -File scripts\build-hap.ps1 -BuildMode release
+# ④ build + sign (dedicated entry points; see "Signing" and "Run")
+#    powershell -ExecutionPolicy Bypass -File scripts\build-debug.ps1      # debug  (default: -Task Hap)
+#    powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1    # release (default: -Task App)
 ```
+
+#### Runtime overlay + prune (app customizations)
+
+Stage ⓪ (`scripts/collect-runtime.mjs`) does a whole-directory `cpSync(..., { recursive: true, force: true })` of the upstream runtime (`../harmonypc-electron/ohos_hap` → `electron/` + `web_engine/`) over this project, so **any app customization that is not re-applied afterwards is silently reverted**. Two mechanisms preserve this project's own changes:
+
+- **Prune (stage 1b)** — deletes the 4 upstream Bluetooth files this app does not use: `BluetoothAdapter.ets`, `BluetoothLowEnergyAdapter.ets` and their two `*Bind.ets` jsbindings. Each file's existence is asserted first: a missing file is a **hard failure**, signalling upstream structural drift that must be re-evaluated (never silently skipped).
+- **Overlay (stage 3)** — re-copies each file listed in `OVERLAY_FILES` from `runtime-overlays/<same relative path>` over the project. Currently 8 entries: both `module.json5` files (`electron` + `web_engine`), `electron/src/main/resources/base/profile/shortcuts_config.json`, `web_engine`'s `MediaAdapter.ets` and `JsBindingMethod.ets`, plus the 3 locale `string.json` files (`base` / `en_US` / `zh_CN`).
+- `OVERLAY_PRE_REWRITE_FILES` (1 entry: `web_engine/src/main/ets/adapter/PermissionManagerAdapter.ets`) is overlaid in stage 3 but is **also** rewritten by stage 4 (bundleName literal replacement). Its overlay copy therefore intentionally keeps the generic literal `com.huawei.ohos_electron`, which stage 4 rewrites to the app bundle name. Because source and destination legitimately differ after stage 4, it is excluded from the stage-7.6 md5 check and guarded by stage 7.4 plus the new guard 7.9 instead.
+- **Guards** — 7.8 asserts every `PRUNE_FILES` entry is absent; 7.9 asserts that for each `OVERLAY_PRE_REWRITE_FILES` entry the overlay source still contains the generic literal, and that the destination contains the app bundle name and no longer the generic literal.
+
+**To protect a new app customization:** place the modified file under `runtime-overlays/<same relative path>`, add its relative path to the correct list (`OVERLAY_FILES` / `OVERLAY_PRE_REWRITE_FILES` / `PRUNE_FILES`) in `collect-runtime.mjs`, then run `node scripts/collect-runtime.mjs` to prove it. `collect-runtime.mjs` requires `DEVECO_SDK_HOME`; `--verify-only` runs the guards only.
 
 ### Signing (externalized — secrets never committed)
 
-Signing material is **externalized** so `build-profile.json5` stays secret-free and safe to commit:
+Signing material is **externalized** so `build-profile.json5` stays secret-free and safe to commit. There are **two** gitignored config files, one per signing mode:
 
-- **`hvigorfile.ts`** — at `afterNodeEvaluate`, injects `app.signingConfigs` from one of two sources (priority order):
-  1. CI env vars: `CERTPATH` / `STORE_FILE` / `PROFILE` / `KEY_ALIAS` / `KEY_PASSWORD` / `STORE_PASSWORD` / `SIGN_ALG`
-  2. **`signing.local.json`** (gitignored; template: `signing.local.json.sample`) → points at `.ohos/config/` `.p12/.cer/.p7b` + the sibling `material/` decryption keychain
-- **`build-profile.json5`** keeps `"signingConfigs": []` (empty) — no secrets in git.
-- **`scripts/build-hap.ps1`** — CLI build+sign using DevEco's bundled JBR (avoids the Temurin/sdkman JDK 21 `Invalid CEN header` zip64 failure in `hap-sign-tool.jar`).
+| Mode | Config (gitignored) | Committed template |
+|---|---|---|
+| `debug` | `signing.debug.local.json` | `signing.debug.local.json.sample` |
+| `release` | `signing.release.local.json` | `signing.release.local.json.sample` |
 
-> `keyPassword` / `storePassword` in `signing.local.json` **must be hvigor DecipherUtil AES-GCM ciphertext** (≥32 hex chars, not plaintext), and the `.p12` directory must contain the `material/{fd,ac,ce}` keychain — otherwise signing fails.
+Both files share the same schema (relative paths resolve against the project root):
 
-> ⚠️ **Restricted permission `ohos.permission.kernel.ALLOW_WRITABLE_CODE_MEMORY`.** The Electron-on-HarmonyOS runtime needs this `system_basic`-level permission (only 2in1/tablet, `system_grant`). A default DevEco debug profile does **not** grant it, so installing the HAP fails with:
-> `install failed due to grant request permissions failed. PermissionName: ohos.permission.kernel.ALLOW_WRITABLE_CODE_MEMORY`
->
-> The `.p7b` provisioning profile is signed by Huawei — it **cannot be regenerated locally** (no local profile-signing CA; editing the SDK `Unsigned*ProfileTemplate.json` does not auto-regenerate an existing `.p7b`). Regenerate it in **DevEco Studio → File → Project Structure → Signing Configs**, with the restricted permission requested (ACL cross-level), then re-point `signing.local.json` at the new `.p7b`. See "Signing & restricted permissions" below.
+```json5
+{
+  "certpath":      ".ohos/release/release.cer",
+  "storeFile":     ".ohos/release/release.p12",
+  "profile":       ".ohos/release/release.p7b",
+  "keyAlias":      "debugKey",            // optional, defaults to "debugKey"
+  "keyPassword":   "<hvigor DecipherUtil AES-GCM ciphertext hex>",
+  "storePassword": "<hvigor DecipherUtil AES-GCM ciphertext hex>",
+  "signAlg":       "SHA256withECDSA"      // optional, defaults to SHA256withECDSA
+}
+```
+
+Mode selection is driven by the **`SIGN_MODE`** environment variable (`debug` | `release`); when unset it defaults to `debug`. Any other value is a **hard failure** — there is no silent fallback to `debug`.
+
+- **`hvigorfile.ts`** — at `afterNodeEvaluate`, resolves `app.signingConfigs` in priority order:
+  1. CI env vars: all of `CERTPATH` / `STORE_FILE` / `STORE_PASSWORD` / `KEY_PASSWORD` (plus optional `PROFILE` / `KEY_ALIAS` / `SIGN_ALG`)
+  2. `signing.<SIGN_MODE>.local.json`
+  3. nothing found → `signingConfigs` is left untouched and a **loud warning names the missing path** (the build then yields an unsigned / IDE-auto-signed package)
+- Injection is **in-memory only** (`setBuildProfileOpt`): **`build-profile.json5` is committed with `"signingConfigs": []`** and is never written to.
+- **`scripts/build-hap.ps1`** — CLI build+sign using DevEco's bundled JBR (avoids the Temurin/sdkman JDK 21 `Invalid CEN header` zip64 failure in `hap-sign-tool.jar`). It sets `SIGN_MODE` for the hvigor child process.
+
+> `keyPassword` / `storePassword` in either config **must be hvigor DecipherUtil AES-GCM ciphertext** (≥32 hex chars, not plaintext), and the `.p12` directory must contain the `material/{fd,ac,ce}` keychain — otherwise signing fails.
+
+> **Post-build signature assertion.** After a successful build, `build-hap.ps1` runs the SDK's `hap-sign-tool verify-app` on the produced artifact, extracts the embedded provisioning profile's `type`, and compares it with the requested `-SignMode`. A mismatch is a prominent error with a non-zero exit. (The `.p7b` is binary, so the profile JSON is located via a Latin-1 byte mapping plus brace-matching.) This guard exists because the project previously shipped a release build that was silently signed with debug material.
 
 > **dsh version pin.** This project builds against deepseek-harness tag **`dsh-v0.1.5-rc.2`**. Patches are organized per dsh version (`patches/<dsh-tag>/`) and `scripts/build-dsh.mjs` pins `patches/dsh-v0.1.5-rc.2/` — when bumping to a new dsh tag, add a matching `patches/<new-tag>/` directory and update that pin.
 
@@ -144,6 +188,24 @@ git clone --branch v1.26.0           https://github.com/dsh-market/dsh-market.gi
 
 ### Run
 
+Build with the dedicated scripts (config/`SIGN_MODE` details in [Signing](#signing-externalized--secrets-never-committed)):
+
+```powershell
+# debug (default task: Hap) — debug-signed packages CAN be side-loaded
+powershell -ExecutionPolicy Bypass -File scripts\build-debug.ps1
+
+# release (default task: App) — produces build\outputs\default\*-signed.app
+#   + build\outputs\default\symbol\release\app-symbol.zip
+powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1
+
+# release-compiled but debug-signed — needed for on-device regression
+powershell -ExecutionPolicy Bypass -File scripts\build-hap.ps1 -BuildMode release -SignMode debug
+```
+
+`scripts/build-hap.ps1` is the engine (params: `-Task Hap|App`, `-BuildMode debug|release`, `-SignMode auto|debug|release`, plus `-JbrHome -SdkHome -NodeHome -Hvigorw -DevEcoHome`); `-SignMode auto` (the default) resolves to `-BuildMode`. The two thin wrappers pin their own defaults: `build-debug.ps1` always uses `-BuildMode debug -SignMode debug`, `build-release.ps1` always uses `-BuildMode release -SignMode release`.
+
+Install the debug build over HDC and launch it:
+
 ```bash
 hdc tconn <device-ip>:<port>   # wireless (IP) debugging first; the port is shown by Developer options → Wireless debugging
 hdc uninstall org.fellow99.DeepseekHarnessHarmony   # uninstall first on fresh install / artifact change, to clear stale dsh-dist in userData
@@ -151,15 +213,45 @@ hdc app install -r electron/build/default/outputs/default/electron-default-signe
 hdc shell aa start -a EntryAbility -b org.fellow99.DeepseekHarnessHarmony
 ```
 
+> ⚠️ **Release-signed packages cannot be side-loaded.** `hdc app install` on a release-signed package fails with `code:9568322 ... signature verification failed due to not trusted app source`. For on-device regression use `-BuildMode release -SignMode debug` (release-compiled, debug-signed); release-signed packages exist only for AppGallery submission.
+
 > Requirements: DevEco Studio 4.0+, HarmonyOS SDK API 17+ (targetSdk 6.1.1(24)), Node 18+, pnpm@11, HDC.
 
 ### Signing & restricted permissions (full procedure)
 
-The app cannot be installed until the provisioning profile (`.p7b`) grants
+The app cannot be installed until its provisioning profile (`.p7b`) grants
 `ohos.permission.kernel.ALLOW_WRITABLE_CODE_MEMORY` (a `system_basic` restricted
-permission, `system_grant`, 2in1/tablet only). Follow this sequence:
+permission, `system_grant`, tablet/2in1 only). There are two ways to obtain it:
 
-**1. Request the restricted permission (DevEco GUI, requires a logged-in Huawei account)**
+**A. Release path (AppGallery) — apply for the permission as an ACL in AGC**
+
+A restricted permission is **not** obtained by hand-editing a profile. The app applies for an
+**ACL** (跨级别权限) in AppGallery Connect, Huawei reviews the usage scenario, and the approved
+permissions are **written into the profile automatically** when the release profile is created —
+so the release signing path needs no manual `.p7b` surgery at all.
+
+1. AGC → 开发与服务 → your project → your app → `项目设置` → **ACL权限** tab.
+2. Under 未获取权限 tick 我已知晓, select `ohos.permission.kernel.ALLOW_WRITABLE_CODE_MEMORY`, and submit 申请
+   (at most 30 permissions per application; wait for approval before a new application).
+3. Review (≈ 3 business days) checks that the permission matches the app's usage scenario — this app
+   enables the JIT compilation feature of a bundled engine, is tablet/2in1 only, does not use the
+   permission for hot updates, and adapts to JShield mode (坚盾模式).
+4. Create the **release profile** in AGC *after* approval — the granted ACL permissions are written into
+   it automatically. **If the ACL permissions change after the profile was created, recreate the profile.**
+5. Currently only developer accounts registered in **mainland China** can use ACL permissions.
+
+See [AppGallery submission](#appgallery-submission) for the full release-certificate / release-profile flow.
+
+**B. Debug path — regenerate the debug profile in DevEco (unchanged)**
+
+The `.p7b` provisioning profile is signed by Huawei — it **cannot be regenerated locally**
+(no local profile-signing CA; editing the SDK `Unsigned*ProfileTemplate.json` does not
+auto-regenerate an existing `.p7b`). A default DevEco debug profile does **not** grant the
+restricted permission, so installing a debug build fails with:
+
+> `install failed due to grant request permissions failed. PermissionName: ohos.permission.kernel.ALLOW_WRITABLE_CODE_MEMORY`
+
+Regenerate it in DevEco Studio:
 
 1. Open the project in DevEco Studio.
 2. `File → Project Structure → Signing Configs`.
@@ -171,32 +263,20 @@ permission, `system_grant`, 2in1/tablet only). Follow this sequence:
    → `ohos.permission.kernel.ALLOW_WRITABLE_CODE_MEMORY`). For a cross-level (ACL) grant on a
    `normal`-APL app, DevEco's signing dialog surfaces the restricted permission for approval;
    accept it so the regenerated `.p7b` carries it in `acls.allowed-acls`.
+6. Point `signing.debug.local.json` at the regenerated material (template:
+   `signing.debug.local.json.sample`; paths relative to the project root are fine).
 
-**2. Point `signing.local.json` at the regenerated material**
+**Build + sign**
 
-Copy `signing.local.json.sample` → `signing.local.json` and fill in the new paths
-(relative to project root is fine):
-
-```json5
-{
-  "certpath":    ".ohos/config/<bundle>_…=.cer",
-  "storeFile":   ".ohos/config/<bundle>_…=.p12",
-  "profile":     ".ohos/config/<bundle>_…=.p7b",
-  "keyAlias":    "debugKey",
-  "keyPassword":  "<AES-GCM ciphertext hex, from the regenerated material>",
-  "storePassword":"<AES-GCM ciphertext hex>",
-  "signAlg":     "SHA256withECDSA"
-}
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build-debug.ps1     # debug
+powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1   # release (App Pack)
 ```
 
-**3. Build + sign**
+`build-hap.ps1` verifies after every build that the artifact's embedded profile `type` matches the
+requested signing mode (see [Signing](#signing-externalized--secrets-never-committed)).
 
-```bash
-powershell -ExecutionPolicy Bypass -File scripts\build-hap.ps1                 # debug
-powershell -ExecutionPolicy Bypass -File scripts\build-hap.ps1 -BuildMode release
-```
-
-**4. Install & launch**
+**Install & launch**
 
 ```bash
 hdc uninstall org.fellow99.DeepseekHarnessHarmony
@@ -204,8 +284,88 @@ hdc app install -r electron/build/default/outputs/default/electron-default-signe
 hdc shell aa start -a EntryAbility -b org.fellow99.DeepseekHarnessHarmony
 ```
 
-> If install still reports a permission grant failure, the `.p7b` does not yet carry the
-> restricted permission — repeat step 1 (confirm the ACL approval) before rebuilding.
+> If install still reports a permission grant failure for a debug build, the `.p7b` does not yet carry the
+> restricted permission — repeat the DevEco regeneration (confirm the ACL approval) before rebuilding.
+> A *release*-signed package can never be installed this way; release signing is for AppGallery only.
+
+## AppGallery submission
+
+Distribution is no longer "personal-use HAP only": shipping on **AppGallery** is now an objective.
+AppGallery only accepts packages signed with a Huawei-issued **release certificate + release profile** —
+debug-signed packages cannot be listed.
+
+### Prerequisites
+
+- A **real-name-verified (实名认证) Huawei developer account** — required to create a release certificate.
+- Currently the ACL permissions this app needs are only available to developer accounts registered in
+  **mainland China**.
+- Qualification material: release preparation on AGC asks for items such as a privacy statement, an
+  electronic copyright certificate, and an app copyright or agency certificate, plus filing/approval —
+  confirm the exact list on AGC's 发布准备工作 page. The APP software copyright certificate (软著) is a
+  **non-mandatory** qualification for non-game apps (recommended variants: 计算机软件著作权登记证书 /
+  APP 电子版权证书 / 软件著作权认证证书); games additionally require a license number (版号).
+
+### Size limits
+
+| Artifact | Limit |
+|---|---|
+| App Pack (`.app`) | ≤ **4GB** |
+| HAP — PC/2-in-1, tablet, phone | ≤ **4GB** |
+| HAP — smartwatch / smart display | ≤ 2GB |
+| HAP — sports watch | ≤ 20MB |
+
+This project's release HAP is ≈360MB and the App Pack ≈245MB — well within the limits. HAPs must not be
+`installationFree`, and `bundleType` must be `app`.
+
+### 1. Create a release certificate
+
+AGC → `证书、APP ID和Profile` → `证书` → `新增证书`, type **发布证书**, upload a `.csr` (generate it in
+DevEco Studio via `Build > Generate Key and CSR`, or with `keytool`), then download the `.cer`.
+
+- Max **3 release certificates** per account; validity **3 years** for real-name-verified developers.
+- Updating a release certificate requires updating the release profile too.
+
+### 2. Apply for the restricted permission (ACL)
+
+AGC → 开发与服务 → your project → your app → `项目设置` → **ACL权限** tab → under 未获取权限 tick
+我已知晓 → select `ohos.permission.kernel.ALLOW_WRITABLE_CODE_MEMORY` → 申请.
+
+- At most **30** permissions per application; wait for approval before making a new application.
+- Some permissions require 申请原因 (≤256 chars), a 使用场景 selection, and optional attachments.
+- Review after application is ≈ **3 business days**.
+- Once approved, the permission appears under 已获取权限 and is **automatically written into the profile**
+  when it is created. **If the ACL permissions change after the profile was created, the profile must be
+  recreated.**
+- A 试用调试Profile (trial debug profile) also exists: 5-day validity, max 5 per app.
+
+The permission itself is officially classified as level `system_basic`, grantMode `system_grant`,
+type 受限开放权限, `startVersion` API 14; available **only for tablet and PC/2-in-1** devices; permitted
+**only for apps that enable the JIT compilation feature of a bundled engine** and **not permitted for hot
+updates**; the app must actively adapt to **JShield mode (坚盾模式)** and must not crash under it.
+
+### 3. Create a release profile
+
+AGC → `证书、APP ID和Profile` → `Profile` → `添加`, type **发布**, bound to the bundle name + a release
+certificate. Unlike a debug profile, a release profile's device list is **empty** (not device-bound).
+
+### 4. Build, version and upload
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1   # -Task App -BuildMode release -SignMode release
+```
+
+- Upload the signed App Pack: `build\outputs\default\*-signed.app`.
+- Optionally upload `build\outputs\default\symbol\release\app-symbol.zip` so crash reports can be
+  symbolicated.
+- `versionCode` (currently `1005`) must be a number and must **strictly increase** on every subsequent
+  submission — see [Current versions](#current-versions).
+- There is **no separate PC/2-in-1 review track** in the official review guide. At submission, if the
+  package supports PC/2-in-1 but the configured distribution devices do not include it, AGC prompts you
+  to update the supported devices.
+
+> **To be confirmed:** the end-to-end review duration for the AppGallery listing itself (only the ACL
+> review's ≈3 business days is documented above), and the exact release-preparation document set — both
+> must be read off AGC's own pages before the first submission.
 
 ## Directory structure
 
@@ -218,7 +378,8 @@ This project and the 3 consumed projects plus 1 architecture-reference project l
 │   ├── electron/                  # Entry module (copied from harmonypc-electron, contains SOs)
 │   ├── web_engine/                # Bridge HAR (ArkTS bridge layer + resfile carries dsh artifacts)
 │   ├── src-main/                  # Main process main.js (extract + runProfile + loadURL + HarmonyOS adaptations)
-│   ├── scripts/                   # Three-stage build: collect-runtime → build-dsh → collect-dsh
+│   ├── scripts/                   # Four-stage build: collect-runtime → build-dsh → collect-dsh, plus build-debug / build-release
+│   ├── runtime-overlays/          # App customizations re-applied after every runtime copy (prune + overlay)
 │   ├── profiles/desktop/          # Custom desktop profile (cordis.patch.yml + package.json)
 │   ├── patches/                   # dsh upstream patches (6)
 │   ├── docs/                      # Engineering plan and final implementation record

@@ -57,9 +57,9 @@
         "reason": "$string:access_pasteboard",
         "usedScene": {
           "abilities": [
-            "FormAbility"
+            "EntryAbility"
           ],
-          "when":"always"
+          "when":"inuse"
         }
       },
       {
@@ -67,9 +67,9 @@
         "reason": "$string:download_dir",
         "usedScene": {
           "abilities": [
-            "FormAbility"
+            "EntryAbility"
           ],
-          "when":"always"
+          "when":"inuse"
         }
       },
       {
@@ -77,9 +77,9 @@
         "reason": "$string:documents_dir",
         "usedScene": {
           "abilities": [
-            "FormAbility"
+            "EntryAbility"
           ],
-          "when":"always"
+          "when":"inuse"
         }
       },
       {
@@ -87,69 +87,9 @@
         "reason": "$string:desktop_dir",
         "usedScene": {
           "abilities": [
-            "FormAbility"
+            "EntryAbility"
           ],
-          "when":"always"
-        }
-      },
-      {
-        "name": "ohos.permission.LOCATION",
-        "reason": "$string:location",
-        "usedScene": {
-          "abilities": [
-            "FormAbility"
-          ],
-          "when":"always"
-        }
-      },
-      {
-        "name": "ohos.permission.APPROXIMATELY_LOCATION",
-        "reason": "$string:location",
-        "usedScene": {
-          "abilities": [
-            "FormAbility"
-          ],
-          "when":"always"
-        }
-      },
-      {
-        "name": "ohos.permission.LOCATION_IN_BACKGROUND",
-        "reason": "$string:location",
-        "usedScene": {
-          "abilities": [
-            "FormAbility"
-          ],
-          "when":"always"
-        }
-      },
-      {
-        "name": "ohos.permission.MICROPHONE",
-        "reason": "$string:microphone",
-        "usedScene": {
-          "abilities": [
-            "FormAbility"
-          ],
-          "when":"always"
-        }
-      },
-      {
-        "name": "ohos.permission.CAMERA",
-        "reason": "$string:camera",
-        "usedScene": {
-          "abilities": [
-            "FormAbility"
-          ],
-          "when":"always"
-        }
-      },
-      {
-        "name": "ohos.permission.ACCESS_BLUETOOTH",
-        "reason": "$string:access_bluetooth",
-        "usedScene": {
-          "abilities": [
-            "FormAbility"
-          ],
-          "when":"always"
+          "when":"inuse"
         }
       },
       {
@@ -157,9 +97,9 @@
         "reason": "$string:screen_capture",
         "usedScene": {
           "abilities": [
-            "FormAbility"
+            "EntryAbility"
           ],
-          "when":"always"
+          "when":"inuse"
         }
       }
     ],
