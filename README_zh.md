@@ -39,7 +39,7 @@ dsh 已完成 **Host/Client 分层**，其 webserver **同时服务 SPA dist 与
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-关键点：**渲染进程同源加载——零 CORS、零鉴权、零自定义协议、零 IPC 载体**——复用 dsh 现有 `WebApiClient`（HTTP 上行 + WebSocket 下行），**对 dsh 零上游改动**（仅 5 个 patch）。
+关键点：**渲染进程同源加载——零 CORS、零鉴权、零自定义协议、零 IPC 载体**——复用 dsh 现有 `WebApiClient`（HTTP 上行 + WebSocket 下行），**对 dsh 零上游改动**（仅 6 个 patch）。
 
 **与 desktop 的差异**（鸿蒙独有适配，详见 `docs/工程规划.md` §18）：
 
@@ -82,15 +82,15 @@ dsh 已完成 **Host/Client 分层**，其 webserver **同时服务 SPA dist 与
 - **同源数据面**：渲染进程 `loadURL(http://<局域网 IP>:<port>/)` 同源加载 dsh Web UI，复用 `WebApiClient`——零 CORS、零鉴权、零新载体。
 - **desktop profile**：`profiles/desktop/`（`dsh.profile.bundles = [dsh-base, dsh-web-app, dshmarket]`，cordis.patch.yml 覆盖 `web-runtime.printUrl: false`、`webserver.host: 0.0.0.0`），运行时复制到 `$DSH_HOME/profiles/desktop`。
 
-### 构建流程（三阶段 + 5 个 patch）
+### 构建流程（三阶段 + 6 个 patch）
 
-dsh 依赖的 Node 内建 API（HMR、原生目录对话框）与鸿蒙沙箱（symlink、loopback 隔离）冲突，需先应用 5 个 patch（幂等——`--reverse --check` 检测已应用则跳过）：
+dsh 依赖的 Node 内建 API（HMR、原生目录对话框）与鸿蒙沙箱（symlink、loopback 隔离）冲突，需先应用 6 个 patch（幂等——`--reverse --check` 检测已应用则跳过）：
 
 ```bash
 # ① 收集运行时：copy ../harmonypc-electron 的 electron + web_engine 模块 + 3 个 SO + libc++_shared.so
 node scripts/collect-runtime.mjs
 
-# ② 构建 dsh：清理 workspace 残留 → apply 5 patch → pnpm build host/client/web → build ../dsh-market
+# ② 构建 dsh：清理 workspace 残留 → apply 6 patch → pnpm build host/client/web → build ../dsh-market
 node scripts/build-dsh.mjs
 
 # ③ 收集 dsh 产物：pnpm deploy 物化 → 补包 → sharp stub → better-sqlite3 注入 → web dist + profile + dshmarket
@@ -112,6 +112,7 @@ tar -czf web_engine/src/main/resources/resfile/resources/app/dsh-dist.tar.gz --f
 | `patches/dsh-v0.1.5-rc.2/dsh-disable-hmr.patch` | `DSH_DISABLE_HMR` 开关，跳过依赖 `--expose-internals` 的 watch-only HMR |
 | `patches/dsh-v0.1.5-rc.2/dsh-disable-native-picker.patch` | 目录选择器走 browse（原生 dialog worker 在 Electron 下 spawn 失败） |
 | `patches/dsh-v0.1.5-rc.2/dsh-flock-openharmony.patch` | openharmony 平台以进程内方式放行 POSIX flock 写锁（无原生插件；单进程宿主，同 dsh 浏览器 worker stub 语义） |
+| `patches/dsh-v0.1.5-rc.2/dsh-hardlink-to-rename.patch` | 鸿蒙沙箱禁硬链接（`EACCES`）→ 以同目录 `rename` 独占发布，其余环境仍保持 `link` 优先 + `EEXIST` 语义（会话日志首次落盘 + 代际发布） |
 
 **前置——同级工程 checkout**：本工程消费 3 个同级工程（非 submodule），构建前需放到同级目录：
 

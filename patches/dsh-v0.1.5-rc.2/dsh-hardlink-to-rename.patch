@@ -1,0 +1,109 @@
+diff --git a/packages/session/session-persistence-jsonl/src/generation.ts b/packages/session/session-persistence-jsonl/src/generation.ts
+index 1e1fd9aa0f..19ab77a780 100644
+--- a/packages/session/session-persistence-jsonl/src/generation.ts
++++ b/packages/session/session-persistence-jsonl/src/generation.ts
+@@ -9,7 +9,6 @@
+ 
+ import { createHash, randomBytes } from 'node:crypto'
+ import {
+-  link as fsLink,
+   lstat as fsLstat,
+   open as fsOpen,
+   readFile as fsReadFile,
+@@ -36,6 +35,7 @@ import { validateStoredEvents } from '@deepseek-ai/dsh-session-persistence'
+ import type { JsonlCompression } from './format.ts'
+ import { generationLogFilename, logSuffix, SessionLogScanner } from './format.ts'
+ import { publishNewFileWin32 } from './win32.ts'
++import { publishExclusiveFile } from './openharmony.ts'
+ import {
+   compressZstdFrame,
+   createZstdFrameDecoder,
+@@ -215,7 +215,7 @@ const defaultFileSystem: GenerationFileSystem = {
+   readdir: path => fsReaddir(path),
+   stat: path => fsStat(path, { bigint: true }),
+   lstat: path => fsLstat(path),
+-  link: fsLink,
++  link: publishExclusiveFile,
+   rm: path => fsRm(path, { force: true }),
+ }
+ 
+diff --git a/packages/session/session-persistence-jsonl/src/index.ts b/packages/session/session-persistence-jsonl/src/index.ts
+index ba4f8996f0..32274fe940 100644
+--- a/packages/session/session-persistence-jsonl/src/index.ts
++++ b/packages/session/session-persistence-jsonl/src/index.ts
+@@ -13,7 +13,7 @@ import {
+   sessionFormatCatalog,
+ } from '@deepseek-ai/dsh-session-format-catalog'
+ import { readdirSync, type Dirent } from 'node:fs'
+-import { open, mkdir, readdir, realpath, link, rm, stat, truncate } from 'node:fs/promises'
++import { open, mkdir, readdir, realpath, rm, stat, truncate } from 'node:fs/promises'
+ import { dirname, join, resolve } from 'node:path'
+ import { performance } from 'node:perf_hooks'
+ import { scheduler } from 'node:timers/promises'
+@@ -43,6 +43,7 @@ import {
+   compressZstdFrame, createZstdFrameDecoder, decompressZstdFrame, decompressZstdPrefix, scanZstdFrames,
+ } from './zstd.ts'
+ import { ensureDurableDirectoryWin32, publishNewFileWin32 } from './win32.ts'
++import { publishExclusiveFile } from './openharmony.ts'
+ import { verifyCurrentGenerationInWorker } from './migration-verifier.ts'
+ import {
+   JsonlGenerationSourceChangedError,
+@@ -1132,9 +1133,11 @@ class JsonlSessionPersistence extends SessionPersistence {
+     // Publish via link()+unlink(), NOT rename(): link fails with EEXIST if the
+     // final path already exists, so two processes materializing the same id
+     // concurrently cannot clobber each other. rename() would silently overwrite.
++    // publishExclusiveFile keeps that preference and renames only where the
++    // sandbox refuses hard links (HarmonyOS EACCES).
+     let linked = false
+     try {
+-      await link(tmp, finalPath)
++      await publishExclusiveFile(tmp, finalPath)
+       linked = true
+     } finally {
+       // Remove an unpublished temp on failure. After publication, defer cleanup
+diff --git a/packages/session/session-persistence-jsonl/src/openharmony.ts b/packages/session/session-persistence-jsonl/src/openharmony.ts
+new file mode 100644
+index 0000000000..fcfdda321c
+--- /dev/null
++++ b/packages/session/session-persistence-jsonl/src/openharmony.ts
+@@ -0,0 +1,40 @@
++/**
++ * Exclusive Session-artifact publication for sandboxes that refuse hard links.
++ *
++ * POSIX publication links a staged file into its canonical name so a same-id
++ * race fails instead of overwriting a committed artifact. The HarmonyOS sandbox
++ * refuses hard links with `EACCES`, so this module keeps the link preference and
++ * renames where the sandbox refuses.
++ * @module @deepseek-ai/dsh-session-persistence-jsonl/openharmony
++ */
++
++import { link, rename } from 'node:fs/promises'
++
++/** Errno codes a filesystem returns when it refuses to create a hard link. */
++function isHardLinkRefused(error: unknown): boolean {
++  const code = (error as NodeJS.ErrnoException | null)?.code
++  return code === 'EACCES' || code === 'EPERM' || code === 'ENOSYS' || code === 'EOPNOTSUPP'
++}
++
++/**
++ * Publish a staged file at its canonical path without overwriting a committed file.
++ *
++ * `link()` publishes atomically and fails with `EEXIST` when the canonical path
++ * already exists, so two processes racing for the same artifact cannot clobber
++ * each other. Where the sandbox refuses hard links, the same-directory
++ * `rename()` fallback publishes the staged bytes in one atomic step; callers
++ * reject an existing canonical artifact before staging, and the HarmonyOS host
++ * is a single process whose in-process write claim already excludes a competing
++ * writer for the same Session.
++ *
++ * @param existingPath - The fsynced staged file to publish.
++ * @param newPath - The canonical path the published artifact must acquire.
++ */
++export async function publishExclusiveFile(existingPath: string, newPath: string): Promise<void> {
++  try {
++    await link(existingPath, newPath)
++  } catch (error) {
++    if (!isHardLinkRefused(error)) throw error
++    await rename(existingPath, newPath)
++  }
++}

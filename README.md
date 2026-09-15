@@ -39,7 +39,7 @@ This project wraps the dsh Web UI in a native HarmonyOS desktop shell (Electron-
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-Key point: **the renderer loads same-origin — zero CORS, zero auth, zero custom protocol, zero IPC carrier** — reusing dsh's existing `WebApiClient` (HTTP uplink + WebSocket downlink), **zero upstream changes** (only 5 patches).
+Key point: **the renderer loads same-origin — zero CORS, zero auth, zero custom protocol, zero IPC carrier** — reusing dsh's existing `WebApiClient` (HTTP uplink + WebSocket downlink), **zero upstream changes** (only 6 patches).
 
 **Differences from desktop** (HarmonyOS-specific adaptations, see `docs/工程规划.md` §18):
 
@@ -82,15 +82,15 @@ Key point: **the renderer loads same-origin — zero CORS, zero auth, zero custo
 - **Same-origin data plane**: the renderer does `loadURL(http://<LAN IP>:<port>/)` to load the dsh Web UI same-origin, reusing `WebApiClient` — zero CORS, zero auth, zero new carrier.
 - **desktop profile**: `profiles/desktop/` (`dsh.profile.bundles = [dsh-base, dsh-web-app, dshmarket]`, cordis.patch.yml overriding `web-runtime.printUrl: false`, `webserver.host: 0.0.0.0`), copied to `$DSH_HOME/profiles/desktop` at runtime.
 
-### Build process (three stages + 5 patches)
+### Build process (three stages + 6 patches)
 
-dsh depends on Node internal APIs (HMR, native directory dialog) and conflicts with the HarmonyOS sandbox (symlink, loopback isolation), so 5 patches must be applied first (idempotent — `--reverse --check` detects already-applied and skips):
+dsh depends on Node internal APIs (HMR, native directory dialog) and conflicts with the HarmonyOS sandbox (symlink, loopback isolation), so 6 patches must be applied first (idempotent — `--reverse --check` detects already-applied and skips):
 
 ```bash
 # ① collect runtime: copy ../harmonypc-electron's electron + web_engine modules + 3 SOs + libc++_shared.so
 node scripts/collect-runtime.mjs
 
-# ② build dsh: clean workspace residue → apply 5 patches → pnpm build host/client/web → build ../dsh-market
+# ② build dsh: clean workspace residue → apply 6 patches → pnpm build host/client/web → build ../dsh-market
 node scripts/build-dsh.mjs
 
 # ③ collect dsh artifacts: pnpm deploy materialize → fill packages → sharp stub → better-sqlite3 injection → web dist + profile + dshmarket
@@ -130,6 +130,7 @@ Signing material is **externalized** so `build-profile.json5` stays secret-free 
 | `patches/dsh-v0.1.5-rc.2/dsh-disable-hmr.patch` | Add `DSH_DISABLE_HMR` switch, skipping watch-only HMR (HMR depends on `--expose-internals`) |
 | `patches/dsh-v0.1.5-rc.2/dsh-disable-native-picker.patch` | Force directory-picker to use browse (native dialog worker fails to spawn under Electron) |
 | `patches/dsh-v0.1.5-rc.2/dsh-flock-openharmony.patch` | Grant the POSIX flock write lock in-process on `openharmony` (no native addon; single-process host, same rationale as dsh's browser-worker stub) |
+| `patches/dsh-v0.1.5-rc.2/dsh-hardlink-to-rename.patch` | HarmonyOS sandbox refuses hard links (`EACCES`) → publish exclusively by same-directory `rename`, keeping the `link`-then-`EEXIST` preference everywhere else (session-log materialization + generation publication) |
 
 **Prerequisite — sibling source checkouts.** This project consumes 3 sibling projects (not submodules); clone them next to this project before building:
 
@@ -219,7 +220,7 @@ This project and the 3 consumed projects plus 1 architecture-reference project l
 │   ├── src-main/                  # Main process main.js (extract + runProfile + loadURL + HarmonyOS adaptations)
 │   ├── scripts/                   # Three-stage build: collect-runtime → build-dsh → collect-dsh
 │   ├── profiles/desktop/          # Custom desktop profile (cordis.patch.yml + package.json)
-│   ├── patches/                   # dsh upstream patches (5)
+│   ├── patches/                   # dsh upstream patches (6)
 │   ├── docs/                      # Engineering plan and final implementation record
 │   └── specs/                     # Spec documents (as-built; see specs/README.md for index)
 │
