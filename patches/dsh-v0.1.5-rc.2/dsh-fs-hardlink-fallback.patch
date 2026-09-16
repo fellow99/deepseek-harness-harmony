@@ -1,0 +1,62 @@
+diff --git a/packages/fs/fs-local/src/fsio.ts b/packages/fs/fs-local/src/fsio.ts
+index e07567e0e3..5bc331e69a 100644
+--- a/packages/fs/fs-local/src/fsio.ts
++++ b/packages/fs/fs-local/src/fsio.ts
+@@ -26,6 +26,40 @@ function isEEXIST(error: unknown): boolean {
+   return error instanceof Error && 'code' in error && error.code === 'EEXIST'
+ }
+ 
++/**
++ * A filesystem that does not implement hard links refuses `link()` with one of
++ * these codes instead of creating the entry. HarmonyOS hmdfs reports `EPERM`
++ * because its local directory inode operations export no `.link` handler.
++ */
++function isHardLinkRefused(error: unknown): boolean {
++  if (!(error instanceof Error) || !('code' in error)) return false
++  const { code } = error
++  return code === 'EACCES' || code === 'EPERM' || code === 'ENOSYS'
++    || code === 'EOPNOTSUPP' || code === 'ENOTSUP' || code === 'EXDEV'
++}
++
++/**
++ * Whether the publication target is absent, which decides whether a
++ * link-refusing filesystem may publish the staged file by rename instead. An
++ * unreadable target counts as present so the caller keeps its structured
++ * guard-failure path.
++ *
++ * @param absolutePath - the canonical path this write intends to create.
++ * @param inspectPublicationTarget - the `lstat`-based probe supplied by the caller.
++ * @returns `true` only when the probe reports that the target does not exist.
++ */
++async function isTargetAbsent(
++  absolutePath: string,
++  inspectPublicationTarget: (path: string) => Promise<BigIntStats>,
++): Promise<boolean> {
++  try {
++    await inspectPublicationTarget(absolutePath)
++    return false
++  } catch (error: unknown) {
++    return isENOENT(error) || isENOTDIR(error)
++  }
++}
++
+ /**
+  * A path component that is expected to be a directory is a regular file (e.g.
+  * resolving `afile/child.txt` when `afile` is a file). Like `ENOENT`, the target
+@@ -617,7 +651,15 @@ export async function writeFileAtomic(
+       try {
+         await linkFile(tempPath, absolutePath)
+       } catch (error: unknown) {
+-        await throwGuardedCreateFailure(error, absolutePath, createIfAbsent.displayPath, inspectPublicationTarget)
++        // A link-refusing filesystem cannot publish by hard link. The staging file
++        // already sits in the destination directory, so a same-directory rename
++        // publishes the staged bytes atomically and preserves the no-overwrite
++        // outcome that the verified-absent target requires.
++        if (isHardLinkRefused(error) && await isTargetAbsent(absolutePath, inspectPublicationTarget)) {
++          await rename(tempPath, absolutePath)
++        } else {
++          await throwGuardedCreateFailure(error, absolutePath, createIfAbsent.displayPath, inspectPublicationTarget)
++        }
+       }
+     } else if (platform === 'win32' && mode !== undefined) {
+       try {

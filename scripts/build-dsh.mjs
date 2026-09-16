@@ -22,6 +22,9 @@ const patchFiles = [
   resolve(patchDir, 'dsh-disable-native-picker.patch'),
   resolve(patchDir, 'dsh-flock-openharmony.patch'),
   resolve(patchDir, 'dsh-hardlink-to-rename.patch'),
+  resolve(patchDir, 'dsh-fs-hardlink-fallback.patch'),
+  resolve(patchDir, 'dsh-fs-remove-primitive.patch'),
+  resolve(patchDir, 'dsh-disable-lefthook-postinstall.patch'),
 ];
 
 // pnpm/tsdown 在无 TTY 时中止模块重建与依赖检查，故设 CI 使其自动处理

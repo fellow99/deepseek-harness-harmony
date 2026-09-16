@@ -177,6 +177,60 @@ const HARMONY_DISABLED_PRESET_ROWS = {
   'persistent-shell': '持久 shell 依赖 pty（node-pty 已禁用）',
 };
 
+/**
+ * HarmonyOS 运行时补丁：补齐 preset 中本应用需要、但上游 preset 未挂载的工具行（顶层追加）。
+ *
+ * `tool-str-replace-editor` 是纯 JS 工具（inject ['tools','fs']，无 subprocess / 原生模块依赖），
+ * 其 `view` 命令对目录会经 ctx.fs.listDir 列出 2 层内容 —— 在 tool-fs-search（ripgrep +
+ * subprocess）被禁用的前提下，这是唯一可用的「列目录」入口。
+ *
+ * `requireRow` 限定只加到已挂载该行的 preset 上：standard / ptc / cordis 有 `tool-fs`；
+ * `minimal` 是固定的双工具训练配置，不追加。
+ *
+ * `fs-mutate`（dsh-plugin-fs-mutate）是本工程自研插件，由父工程 ../dsh-plugins 经 collect-dsh.mjs
+ * 的 collectPlugins() 物化到 dsh-dist/node_modules，故 name 用裸包名；它经围栏原语 ctx.fs.remove
+ * 补齐 delete / move —— 上游 tool-fs 只有读写，删除/移动此前在鸿蒙侧没有入口。
+ * 本表与 collect-dsh.mjs 的 HARMONY_ENSURED_PRESET_ROWS 逐条镜像，改动需同时改两处。
+ */
+const HARMONY_ENSURED_PRESET_ROWS = [
+  {
+    id: 'tool-str-replace-editor',
+    name: '@deepseek-ai/dsh-tool-str-replace-editor',
+    requireRow: 'tool-fs',
+    reason: 'HarmonyOS: 补齐列目录（view）与文件编辑，替代依赖 subprocess 的 tool-fs-search',
+  },
+  {
+    id: 'fs-mutate',
+    name: 'dsh-plugin-fs-mutate',
+    requireRow: 'tool-fs',
+    reason: 'HarmonyOS: 经围栏原语 ctx.fs.remove 补齐 delete / move（纯 JS，父工程 dsh-plugins 物化）',
+  },
+];
+
+const HARMONY_TOP_ROW_RE = /^- id: ([A-Za-z0-9_-]+)\s*$/;
+const HARMONY_MARKER = '# HarmonyOS:';
+
+/** preset 顶层（列 0）是否已有该 id 的行；group 内 4 空格缩进的嵌套行不算。 */
+function hasTopLevelPresetRow(lines, id) {
+  for (const line of lines) {
+    const m = HARMONY_TOP_ROW_RE.exec(line);
+    if (m !== null && m[1] === id) return true;
+  }
+  return false;
+}
+
+function ensurePresetRows(out) {
+  let ensured = 0;
+  for (const spec of HARMONY_ENSURED_PRESET_ROWS) {
+    if (spec.requireRow !== undefined && !hasTopLevelPresetRow(out, spec.requireRow)) continue;
+    if (hasTopLevelPresetRow(out, spec.id)) continue;
+    while (out.length > 0 && out[out.length - 1].trim() === '') out.pop();
+    out.push('', `# ${spec.reason}`, `- id: ${spec.id}`, `  name: '${spec.name}'`, '');
+    ensured++;
+  }
+  return ensured;
+}
+
 function patchAgentPresetsRuntime() {
   const { readdirSync: rd, existsSync: ex, readFileSync: rf, writeFileSync: wf } = require('node:fs');
   // dsh ≥ 0.1.2 ships presets inside the agent-presets package (SHIPPED_PRESET_ROOT =
@@ -187,16 +241,17 @@ function patchAgentPresetsRuntime() {
   ].find(ex);
   if (presetsDir === undefined) return;
   let total = 0;
+  let ensuredTotal = 0;
   for (const name of rd(presetsDir)) {
     const file = join(presetsDir, name, 'agent.cordis.yml');
     if (!ex(file)) continue;
     const lines = rf(file, 'utf8').split('\n');
     const out = [];
-    let changed = false;
+    const totalBefore = total;
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       out.push(line);
-      const m = /^- id: ([A-Za-z0-9_-]+)\s*$/.exec(line);
+      const m = HARMONY_TOP_ROW_RE.exec(line);
       const reason = m ? HARMONY_DISABLED_PRESET_ROWS[m[1]] : undefined;
       if (reason === undefined) continue;
       // 收集该顶层 row 的 2 空格缩进行（4 空格 config 嵌套内容不计入）。
@@ -207,24 +262,29 @@ function patchAgentPresetsRuntime() {
       let inserted = false;
       for (const b of block) {
         if (/^  disabled:/.test(b)) {
-          out.push(`  disabled: true # HarmonyOS: ${reason}`);
-          changed = true; total++;
+          if (b.includes(HARMONY_MARKER)) { out.push(b); continue; }
+          out.push(`  disabled: true ${HARMONY_MARKER} ${reason}`);
+          total++;
         } else {
           out.push(b);
           if (!hasDisabled && !inserted && /^  name:/.test(b)) {
-            out.push(`  disabled: true # HarmonyOS: ${reason}`);
-            inserted = true; changed = true; total++;
+            out.push(`  disabled: true ${HARMONY_MARKER} ${reason}`);
+            inserted = true; total++;
           }
         }
       }
       i = j - 1;
     }
-    if (changed) {
+    const ensured = ensurePresetRows(out);
+    ensuredTotal += ensured;
+    if (total > totalBefore || ensured > 0) {
       wf(file, out.join('\n'));
-      console.log('[dsh-harmony] preset ' + name + ' 已禁用鸿蒙不可用的终端/搜索工具行');
+      console.log(`[dsh-harmony] preset ${name} 已适配：禁用 ${total - totalBefore} 行、补齐 ${ensured} 行`);
     }
   }
-  if (total > 0) console.log('[dsh-harmony] agent preset 运行时补丁完成，禁用', total, '个工具行');
+  if (total > 0 || ensuredTotal > 0) {
+    console.log('[dsh-harmony] agent preset 运行时补丁完成，禁用', total, '个工具行，补齐', ensuredTotal, '个工具行');
+  }
 }
 
 /** 在 dsh CLI lib 中定位 profile-boot 薄入口（re-export runProfile）。 */
@@ -331,6 +391,16 @@ async function startHost() {
   ensureDesktopProfile(process.env.DSH_HOME);
   ensureDshMarketProfileLink(process.env.DSH_HOME);
   process.env.DSH_DISABLE_HMR = '1';
+  // 技能目录：故意放在 dsh-dist.tar.gz 之外（与 main.js 同目录），只换 HAP 即可更新技能。
+  // 上游 skill-filesystem 读 DSH_BUNDLED_SKILL_DIR 作为 bundled default root（rank 600）；
+  // 不设它，preset 虽已挂载 skill-filesystem/tool-skill，skill 工具面对的仍是空目录。
+  const bundledSkills = join(__dirname, 'skills');
+  if (existsSync(bundledSkills)) {
+    process.env.DSH_BUNDLED_SKILL_DIR = bundledSkills;
+    console.log('[dsh-harmony] DSH_BUNDLED_SKILL_DIR =', bundledSkills);
+  } else {
+    console.warn('[dsh-harmony] skills 目录缺失，skill 工具将无可用技能:', bundledSkills);
+  }
   // 禁用 agent preset 中依赖 shell/subprocess/pty 的工具行（node-pty MVP 已禁用），
   // 否则 standard preset 挂载失败 → session.create 报 agent-preset-invalid → 无法选中工作区/开会话。
   patchAgentPresetsRuntime();

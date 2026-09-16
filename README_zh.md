@@ -50,7 +50,7 @@ dsh 已完成 **Host/Client 分层**，其 webserver **同时服务 SPA dist 与
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-关键点：**渲染进程同源加载——零 CORS、零鉴权、零自定义协议、零 IPC 载体**——复用 dsh 现有 `WebApiClient`（HTTP 上行 + WebSocket 下行），**对 dsh 零上游改动**（仅 6 个 patch）。
+关键点：**渲染进程同源加载——零 CORS、零鉴权、零自定义协议、零 IPC 载体**——复用 dsh 现有 `WebApiClient`（HTTP 上行 + WebSocket 下行），**对 dsh 零上游改动**（仅 9 个 patch）。
 
 **与 desktop 的差异**（鸿蒙独有适配，详见 `docs/工程规划.md` §18）：
 
@@ -93,9 +93,9 @@ dsh 已完成 **Host/Client 分层**，其 webserver **同时服务 SPA dist 与
 - **同源数据面**：渲染进程 `loadURL(http://<局域网 IP>:<port>/)` 同源加载 dsh Web UI，复用 `WebApiClient`——零 CORS、零鉴权、零新载体。
 - **desktop profile**：`profiles/desktop/`（`dsh.profile.bundles = [dsh-base, dsh-web-app, dshmarket]`，cordis.patch.yml 覆盖 `web-runtime.printUrl: false`、`webserver.host: 0.0.0.0`），运行时复制到 `$DSH_HOME/profiles/desktop`。
 
-### 构建流程（四阶段 + 6 个 patch）
+### 构建流程（四阶段 + 9 个 patch）
 
-dsh 依赖的 Node 内建 API（HMR、原生目录对话框）与鸿蒙沙箱（symlink、loopback 隔离）冲突，需先应用 6 个 patch（幂等——`--reverse --check` 检测已应用则跳过）：
+dsh 依赖的 Node 内建 API（HMR、原生目录对话框）与鸿蒙沙箱（symlink、loopback 隔离）冲突，需先应用 9 个 patch（幂等——`--reverse --check` 检测已应用则跳过）：
 
 流水线共 **四阶段**（⓪–③），之后是本机构建 + 签名步骤（④）。阶段 ⓪ 是运行时同步：它强制覆盖上游运行时，**并重新施加本工程自己的定制**（prune + overlay），因此必须始终第一个运行。
 
@@ -107,7 +107,7 @@ node scripts/collect-runtime.mjs
 # ① 构建 dsh：清理 workspace 残留 → apply 6 patch → pnpm build host/client/web → build ../dsh-market
 node scripts/build-dsh.mjs
 
-# ② 收集 dsh 产物：pnpm deploy 物化 → 补包 → sharp stub → better-sqlite3 注入 → web dist + profile + dshmarket
+# ② 收集 dsh 产物：pnpm deploy 物化 → 补包 → sharp stub → better-sqlite3 注入 → web dist + profile + dshmarket + dsh-plugins
 node scripts/collect-dsh.mjs
 
 # ③ 压缩 dsh-dist 为 dsh-dist.tar.gz（--format=ustar，~143MB，运行时流式解压）
@@ -128,6 +128,19 @@ tar -czf web_engine/src/main/resources/resfile/resources/app/dsh-dist.tar.gz --f
 - **守卫** —— 7.8 断言 `PRUNE_FILES` 每个文件必须不存在；7.9 断言 `OVERLAY_PRE_REWRITE_FILES` 每个条目的 overlay 源仍含通用字面量、目标含 App bundleName 且已无通用字面量。
 
 **保护新的应用定制：** 把改动后的文件放到 `runtime-overlays/<相同相对路径>`，把其相对路径加入 `collect-runtime.mjs` 中正确的列表（`OVERLAY_FILES` / `OVERLAY_PRE_REWRITE_FILES` / `PRUNE_FILES`），然后跑 `node scripts/collect-runtime.mjs` 验证。`collect-runtime.mjs` 需要 `DEVECO_SDK_HOME`；`--verify-only` 只跑守卫。
+
+#### 插件：`dsh-plugins/` 约定
+
+本壳自研插件**不放在本工程**，而是放在父工程 `../dsh-plugins/dsh-plugin-XXX/`：目录名即 npm 包名（`dsh-plugin-XXX`，裸包名/非 scoped），`XXX` 描述功能。
+
+- **物化自动完成（阶段 ②）** —— `scripts/collect-dsh.mjs` 的 `collectPlugins()` 通配 `../dsh-plugins/dsh-plugin-*/`，读取各插件 `package.json` 的 `name`，把该目录复制到 `dsh-dist/node_modules/<name>/`（与 `dshmarket` 相同的非 scoped 布局）。落地目录名取自 `package.json`，因此**新增插件无需改动构建脚本**。
+- **失败即硬报错** —— `dsh-plugins/` 存在、但匹配到的插件缺可读的 `package.json`，或包名不符 `dsh-plugin-*`，收集阶段直接非零退出。`dsh-plugins/` 不存在或没有 `dsh-plugin-*` 目录时，只打印一行日志、不做任何事。
+- **无需加入 keep 白名单** —— 插件落在 `dsh-dist.tar.gz` 内部，且 `collectPlugins()` 是最后一个物化步骤（在 `.pnpm` 删除与 prebuilds 剪裁之后）。`collect-runtime.mjs` 的 `APP_KEEP` 只守护 `resfile/resources/app` —— 这正是散放的 `skills/` 需要它的原因，而与插件同布局的 `dshmarket` 并不需要。
+- **挂载方式** —— agent preset 按会话独立组合、host 的 `cordis.patch.yml` 管不到，故插件靠 `HARMONY_ENSURED_PRESET_ROWS` 里的一行挂载：`src-main/main.js` 在运行时施加，`collect-dsh.mjs` 把同样的行烘进产物，两张表保持逐条镜像；`requireRow` 限定只加到已挂载该行的 preset（`minimal` 不受影响）。
+
+**新增一个插件：** 新建 `../dsh-plugins/dsh-plugin-XXX/package.json`（name 为 `dsh-plugin-XXX`）及其 `lib/`，在 `src-main/main.js` 与 `scripts/collect-dsh.mjs` **两处** `HARMONY_ENSURED_PRESET_ROWS` 各加一行，然后重跑阶段 ②。
+
+> 插件各自持有自己的文档。配置与 **Known Limitations（已知限制）** 见 [`dsh-plugin-fs-mutate/README_zh.md`](../dsh-plugins/dsh-plugin-fs-mutate/README_zh.md) —— 其中最需注意的是 `move` 仅支持文本文件，因为 `ctx.fs.writeText` 拒绝二进制内容。
 
 ### 签名（外置，密钥永不入库）
 
@@ -175,6 +188,9 @@ tar -czf web_engine/src/main/resources/resfile/resources/app/dsh-dist.tar.gz --f
 | `patches/dsh-v0.1.5-rc.2/dsh-disable-native-picker.patch` | 目录选择器走 browse（原生 dialog worker 在 Electron 下 spawn 失败） |
 | `patches/dsh-v0.1.5-rc.2/dsh-flock-openharmony.patch` | openharmony 平台以进程内方式放行 POSIX flock 写锁（无原生插件；单进程宿主，同 dsh 浏览器 worker stub 语义） |
 | `patches/dsh-v0.1.5-rc.2/dsh-hardlink-to-rename.patch` | 鸿蒙沙箱禁硬链接（`EACCES`）→ 以同目录 `rename` 独占发布，其余环境仍保持 `link` 优先 + `EEXIST` 语义（会话日志首次落盘 + 代际发布） |
+| `patches/dsh-v0.1.5-rc.2/dsh-fs-hardlink-fallback.patch` | hmdfs 用户目录挂载同样禁硬链接（`EPERM`，目录 inode 无 `.link` 处理器）→ `writeFileAtomic` 的守卫式新建在**已确认目标不存在**时回退为同目录 `rename`，不再以 `FS_IO_ERROR` 直接失败。仅作用于 `fs-local`；硬链接可用之处仍保持 link 优先 |
+| `patches/dsh-v0.1.5-rc.2/dsh-fs-remove-primitive.patch` | 给 `ctx.fs` seam 补上缺失的 `remove` 变更原语，使文件工具能经与 write/edit **同一道沙箱围栏**删除：`FileSystem.remove` 为**非抽象**、默认体抛错的实现（若设为 abstract，6 个 `extends FileSystem` 的具体类会编译失败）、`fs-local` 在独立 `remove.ts` 中实现、`fs-sandbox` 覆写先过 `checkedTarget` |
+| `patches/dsh-v0.1.5-rc.2/dsh-disable-lefthook-postinstall.patch` | 移除 dsh 根 `postinstall`（lefthook git 钩子安装器）。它拒绝任何共享 git 配置含 `core.worktree` 的检出——而 **submodule 检出必然如此**——导致 `collect-dsh` 内的 `pnpm deploy` 以 `ELIFECYCLE` 失败。git 钩子对 HAP 产物毫无意义，且该安装器在本检出中从未成功过（`dsh-hooks/` 不存在） |
 
 **前置——同级工程 checkout**：本工程消费 3 个同级工程（非 submodule），构建前需放到同级目录：
 
@@ -216,6 +232,99 @@ hdc shell aa start -a EntryAbility -b org.fellow99.DeepseekHarnessHarmony
 > ⚠️ **发布签名的包无法侧载。** 对 release 签名的包执行 `hdc app install` 会报 `code:9568322 ... signature verification failed due to not trusted app source`。真机回归请用 `-BuildMode release -SignMode debug`（release 编译 + debug 签名）；release 签名的包只用于 AppGallery 提交。
 
 > 环境要求：DevEco Studio 4.0+、HarmonyOS SDK API 17+（targetSdk 6.1.1(24)）、Node 18+、pnpm@11、HDC。
+
+### 真机调试（针对已安装的包）
+
+以下手段都作用于**已安装**的 debug 签名 HAP —— 无需重新构建、无需改代码。
+
+#### 主进程 inspector（能力最强，推荐首选）
+
+运行时启动 Electron 时**默认带 `--inspect`**，因此主进程始终在 9229 端口暴露一个 Node inspector。该上下文里 `require` 可用，能拿到 `electron` —— 所以既能查询 dsh 宿主，也能驱动渲染进程。
+
+```bash
+export MSYS_NO_PATHCONV=1   # 否则 Git Bash 会把 /data/... 重写成 Windows 路径
+hdc fport tcp:19229 tcp:9229            # 本地 19229 → 设备 9229（本地用非默认端口避免占用冲突）
+curl -s http://127.0.0.1:19229/json/list   # 记下 webSocketDebuggerUrl
+```
+
+用 Node 自带全局 `WebSocket`（Node ≥ 22）走 CDP 求值：
+
+```js
+// cdp.mjs <ws-url> <表达式 | @文件>
+import { readFileSync } from 'node:fs';
+const [wsUrl, arg] = process.argv.slice(2);
+const expression = arg.startsWith('@') ? readFileSync(arg.slice(1), 'utf8') : arg;
+const ws = new WebSocket(wsUrl);
+ws.addEventListener('open', async () => {
+  const send = (method, params) => new Promise(resolve => {
+    const id = Math.floor(Math.random() * 1e9);
+    const onMessage = event => {
+      const msg = JSON.parse(event.data);
+      if (msg.id !== id) return;
+      ws.removeEventListener('message', onMessage);
+      resolve(msg.result);
+    };
+    ws.addEventListener('message', onMessage);
+    ws.send(JSON.stringify({ id, method, params }));
+  });
+  await send('Runtime.enable', {});
+  const result = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
+  console.log(result.exceptionDetails
+    ? 'EXCEPTION: ' + result.exceptionDetails.exception?.description
+    : JSON.stringify(result.result?.value, null, 1));
+  process.exit(0);
+});
+```
+
+常用表达式：
+
+```js
+// 有哪些窗口、各自在什么 URL
+(async () => { const { BrowserWindow } = require('electron'); return JSON.stringify(BrowserWindow.getAllWindows().map(w => w.webContents.getURL())); })()
+// 读取渲染进程可见文本
+(async () => { const { BrowserWindow } = require('electron'); return await BrowserWindow.getAllWindows()[0].webContents.executeJavaScript('document.body.innerText'); })()
+```
+
+**往输入框写字。** 输入框是 `contenteditable` 富文本编辑器（不是 `<textarea>`），且受 React 受控 —— 直接赋 `value` / `innerText` **不会**被识别。要用 CDP 的 `Input.insertText`：
+
+```js
+(async () => {
+  const { BrowserWindow } = require('electron');
+  const wc = BrowserWindow.getAllWindows()[0].webContents;
+  const SEL = '[contenteditable="true"][role="textbox"]';
+  await wc.executeJavaScript(`document.querySelector('${SEL}').focus()`);
+  if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
+  await wc.debugger.sendCommand('Input.insertText', { text: '…' });
+  return await wc.executeJavaScript(`document.querySelector('${SEL}').innerText.length`);
+})()
+```
+
+发送：点击 `aria-label` 为 `发送消息` 的按钮。
+
+#### 为什么不能用外部浏览器（Playwright 等）驱动
+
+宿主的**每个 RPC 方法都需要一个浏览器会话**：`GET /` 只接受 `?token=<launchToken>` 形式的启动令牌，校验后下发与 authority 绑定的签名 cookie；缺少 cookie 会在 **RPC 分发之前就返回 401**。而启动令牌从不落日志（`web-runtime` 以 `printUrl: false` 运行），渲染进程在交换后又会重定向到干净的 `/` —— 因此外部浏览器（即便经 `hdc fport` 映射端口）**无法完成鉴权**。
+
+#### 用 `uitest` 做渲染进程 UI 自动化（仅点击可用）
+
+```bash
+hdc shell uitest dumpLayout -p /data/local/tmp/layout.json
+hdc file recv /data/local/tmp/layout.json ./layout.json   # 拿到每个节点的文本与坐标
+hdc shell uitest uiInput click <x> <y>                     # 点击**可以**触达 Web 内容
+```
+
+- ⚠️ `uitest uiInput text` 与 `uiInput keyEvent` **无法**触达 Web 内容（编辑器不是原生控件）—— 文本输入请用 inspector 的 `Input.insertText`。
+- dump 覆盖**整屏**，因此系统设置等其他窗口会一并出现。点击前先 `hdc shell aa start -a EntryAbility -b org.fellow99.DeepseekHarnessHarmony` 再重新 dump，确认应用在前台。
+
+#### 宿主起来了吗？在哪个端口？
+
+```bash
+hdc shell "hilog -x | grep dsh-harmony | tail -20"   # 「host 就绪: http://<局域网IP>:<端口>/」
+```
+
+经 `hdc fport` 探测 `http://127.0.0.1:<端口>/` 返回 **401**，说明 webserver 可达且鉴权围栏生效。
+
+> ⚠️ **安全提示。** `--inspect` 意味着**任何拿到 `hdc` 的人都能完全控制宿主进程**（该上下文里 `require` 可用）。这来自上游运行时的默认参数，非本工程引入。本地调试可接受，但**上架 AppGallery 前应评估在 release 构建中移除该参数**。
 
 ### 签名与受限权限（完整流程）
 

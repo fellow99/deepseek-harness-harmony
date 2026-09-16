@@ -1,0 +1,206 @@
+diff --git a/packages/fs/fs-local/src/index.ts b/packages/fs/fs-local/src/index.ts
+index 22fc6310fb..fe08a0fc9b 100644
+--- a/packages/fs/fs-local/src/index.ts
++++ b/packages/fs/fs-local/src/index.ts
+@@ -16,6 +16,7 @@ import type {
+   FsEditRequest,
+   FsInfo,
+   FsPathInfo,
++  FsRemoveOutcome,
+   FsTarget,
+   FsWriteIntent,
+   FsWriteOutcome,
+@@ -37,6 +38,7 @@ import {
+   writeFileAtomic,
+ } from './fsio.ts'
+ import type { FsIoInternals } from './fsio.ts'
++import { removePath } from './remove.ts'
+ 
+ /** Configuration for the local filesystem backend. */
+ export interface Config {
+@@ -263,6 +265,16 @@ export class LocalFileSystem extends FileSystem {
+     })
+   }
+ 
++  override async remove(
++    target: FsTarget,
++    options?: { recursive?: boolean; signal?: AbortSignal },
++  ): Promise<FsRemoveOutcome> {
++    return this.withLock(target.targetKey, async () => {
++      const kind = await removePath(target.targetKey, options?.recursive === true, options?.signal)
++      return { path: target.displayPath, kind }
++    })
++  }
++
+   /* v8 ignore next 5 -- the post-write probe finding the file absent requires a
+    * concurrent unlink between rename and stat; fall back to a sentinel version. */
+   private versionAfterWrite(after: { version: FsVersion } | null, target: FsTarget): FsVersion {
+diff --git a/packages/fs/fs-local/src/remove.ts b/packages/fs/fs-local/src/remove.ts
+new file mode 100644
+index 0000000000..52e9580c7e
+--- /dev/null
++++ b/packages/fs/fs-local/src/remove.ts
+@@ -0,0 +1,49 @@
++/**
++ * Raw removal mechanics for the local `ctx.fs` backend. Kept beside
++ * `fsio.ts` rather than inside it so a sandbox-fenced removal composes with the
++ * read/write/edit primitives without widening the atomic-write module.
++ * @module @deepseek-ai/dsh-fs-local/remove
++ */
++
++import type { Stats } from 'node:fs'
++import { lstat, rm } from 'node:fs/promises'
++import { FsError } from '@deepseek-ai/dsh-fs'
++
++/**
++ * Remove a file or directory after probing the entry, so an absent path reports
++ * the seam's `FS_NOT_FOUND` rather than a raw Node errno. The entry is probed
++ * without following the final symlink, so removing a link removes the link
++ * itself; without `recursive`, a non-empty directory fails loudly instead of
++ * being silently emptied.
++ * @param absolutePath - the canonical path to remove (typically a target key).
++ * @param recursive - permit removing a directory together with its contents.
++ * @param signal - aborts before the removal (`FS_ABORTED`).
++ * @returns whether the removed entry was a regular file or a directory.
++ */
++export async function removePath(
++  absolutePath: string,
++  recursive: boolean,
++  signal?: AbortSignal,
++): Promise<'file' | 'directory'> {
++  if (signal?.aborted) throw new FsError('remove aborted', 'FS_ABORTED')
++  const info = await lstatAbsentAsNull(absolutePath)
++  if (info === null) throw new FsError(`cannot remove "${absolutePath}": not found`, 'FS_NOT_FOUND')
++  await rm(absolutePath, { recursive, force: false })
++  return info.isDirectory() ? 'directory' : 'file'
++}
++
++/**
++ * `lstat` an entry, reporting an absent path or absent parent segment as null so
++ * the caller raises the seam's structured `FS_NOT_FOUND`.
++ * @param absolutePath - the path entry to inspect with `lstat` semantics.
++ * @returns the entry metadata, or null when it does not exist.
++ */
++async function lstatAbsentAsNull(absolutePath: string): Promise<Stats | null> {
++  try {
++    return await lstat(absolutePath)
++  } catch (error: unknown) {
++    const code = (error as NodeJS.ErrnoException | null)?.code
++    if (code === 'ENOENT' || code === 'ENOTDIR') return null
++    throw error
++  }
++}
+diff --git a/packages/fs/fs-sandbox/src/index.ts b/packages/fs/fs-sandbox/src/index.ts
+index 60dd6b3bad..5f1fe67f44 100644
+--- a/packages/fs/fs-sandbox/src/index.ts
++++ b/packages/fs/fs-sandbox/src/index.ts
+@@ -30,7 +30,7 @@ import { Context } from '@deepseek-ai/cordis'
+ import { LocalFileSystem } from '@deepseek-ai/dsh-fs-local'
+ import type { Config as LocalConfig } from '@deepseek-ai/dsh-fs-local'
+ import { FsError } from '@deepseek-ai/dsh-fs'
+-import type { FsEditOutcome, FsEditRequest, FsTarget, FsVersion, FsWriteIntent, FsWriteOutcome } from '@deepseek-ai/dsh-fs'
++import type { FsEditOutcome, FsEditRequest, FsRemoveOutcome, FsTarget, FsVersion, FsWriteIntent, FsWriteOutcome } from '@deepseek-ai/dsh-fs'
+ import { writableRoots } from '@deepseek-ai/dsh-sandbox'
+ import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
+ import type {} from '@deepseek-ai/dsh-sandbox-policy'
+@@ -108,6 +108,24 @@ export class SandboxedFileSystem extends LocalFileSystem {
+     return super.editText(await this.checkedTarget(target, sandboxPolicy), edit, expected, signal)
+   }
+ 
++  /**
++   * Fence the removal by the per-call policy, then delegate to the inherited
++   * removal. See {@link checkedTarget}.
++   * @param target - the resolved target to remove.
++   * @param options - `recursive` permits removing a non-empty directory; `signal`
++   *   aborts before the removal takes effect.
++   * @param sandboxPolicy - the per-call mode and workspace root; omit to use
++   *   the deployment fallback.
++   * @returns the removal outcome from the inherited backend.
++   */
++  override async remove(
++    target: FsTarget,
++    options?: { recursive?: boolean; signal?: AbortSignal },
++    sandboxPolicy?: SandboxExecutionPolicy,
++  ): Promise<FsRemoveOutcome> {
++    return super.remove(await this.checkedTarget(target, sandboxPolicy), options)
++  }
++
+   /**
+    * Enforce the per-call policy against `target` and return the EXACT target the
+    * mutation must use, so the checked identity is the mutated one (no
+diff --git a/packages/fs/fs/src/index.ts b/packages/fs/fs/src/index.ts
+index bfa05bf257..4d16600df8 100644
+--- a/packages/fs/fs/src/index.ts
++++ b/packages/fs/fs/src/index.ts
+@@ -10,6 +10,7 @@
+ 
+ import { Context, Service } from '@deepseek-ai/cordis'
+ import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
++import { FsError } from './types.ts'
+ import type {
+   FsDirEntry,
+   FsEditOutcome,
+@@ -17,6 +18,7 @@ import type {
+   FsInfo,
+   FsPathInfo,
+   FsObservation,
++  FsRemoveOutcome,
+   FsTarget,
+   FsVersion,
+   FsWriteIntent,
+@@ -36,6 +38,7 @@ export type {
+   FsInfo,
+   FsObservation,
+   FsPathInfo,
++  FsRemoveOutcome,
+   FsTarget,
+   FsWriteIntent,
+   FsWriteOutcome,
+@@ -275,6 +278,28 @@ export abstract class FileSystem extends Service {
+     signal?: AbortSignal,
+     sandboxPolicy?: SandboxExecutionPolicy,
+   ): Promise<FsEditOutcome>
++
++  /**
++   * Remove a file or directory. The base provider supports no removal, so the
++   * default body throws `FS_IO_ERROR`; a backend that can remove overrides it.
++   * @param target - the resolved target to remove.
++   * @param options - `recursive` permits removing a non-empty directory; `signal`
++   *   aborts before the removal takes effect.
++   * @param sandboxPolicy - the per-call mode and workspace root this removal
++   *   runs under; a sandboxing backend fences the removal by it, the bare
++   *   backend ignores it. Omit to leave the backend its own default.
++   * @returns the outcome, naming the removed path and whether it was a file or a directory.
++   */
++  async remove(
++    target: FsTarget,
++    options?: { recursive?: boolean; signal?: AbortSignal },
++    sandboxPolicy?: SandboxExecutionPolicy,
++  ): Promise<FsRemoveOutcome> {
++    void target
++    void options
++    void sandboxPolicy
++    throw new FsError('remove is not supported by this filesystem backend', 'FS_IO_ERROR')
++  }
+ }
+ 
+ export default FileSystem
+diff --git a/packages/fs/fs/src/types.ts b/packages/fs/fs/src/types.ts
+index a3464f197c..0184576ff5 100644
+--- a/packages/fs/fs/src/types.ts
++++ b/packages/fs/fs/src/types.ts
+@@ -167,6 +167,14 @@ export interface FsEditOutcome {
+   after: string
+ }
+ 
++/** Outcome of a removal. */
++export interface FsRemoveOutcome {
++  /** The removed target's display path, for model/UI-facing output. */
++  path: string
++  /** Whether the removed entry was a regular file or a directory. */
++  kind: 'file' | 'directory'
++}
++
+ /**
+  * Stable, machine-routable codes for filesystem failures. Carried on
+  * {@link FsError}; the tool registry exposes `{ name, code }` on `isError`

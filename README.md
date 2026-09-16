@@ -50,7 +50,7 @@ This project wraps the dsh Web UI in a native HarmonyOS desktop shell (Electron-
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-Key point: **the renderer loads same-origin — zero CORS, zero auth, zero custom protocol, zero IPC carrier** — reusing dsh's existing `WebApiClient` (HTTP uplink + WebSocket downlink), **zero upstream changes** (only 6 patches).
+Key point: **the renderer loads same-origin — zero CORS, zero auth, zero custom protocol, zero IPC carrier** — reusing dsh's existing `WebApiClient` (HTTP uplink + WebSocket downlink), **zero upstream changes** (only 9 patches).
 
 **Differences from desktop** (HarmonyOS-specific adaptations, see `docs/工程规划.md` §18):
 
@@ -93,9 +93,9 @@ Key point: **the renderer loads same-origin — zero CORS, zero auth, zero custo
 - **Same-origin data plane**: the renderer does `loadURL(http://<LAN IP>:<port>/)` to load the dsh Web UI same-origin, reusing `WebApiClient` — zero CORS, zero auth, zero new carrier.
 - **desktop profile**: `profiles/desktop/` (`dsh.profile.bundles = [dsh-base, dsh-web-app, dshmarket]`, cordis.patch.yml overriding `web-runtime.printUrl: false`, `webserver.host: 0.0.0.0`), copied to `$DSH_HOME/profiles/desktop` at runtime.
 
-### Build process (four stages + 6 patches)
+### Build process (four stages + 9 patches)
 
-dsh depends on Node internal APIs (HMR, native directory dialog) and conflicts with the HarmonyOS sandbox (symlink, loopback isolation), so 6 patches must be applied first (idempotent — `--reverse --check` detects already-applied and skips):
+dsh depends on Node internal APIs (HMR, native directory dialog) and conflicts with the HarmonyOS sandbox (symlink, loopback isolation), so 9 patches must be applied first (idempotent — `--reverse --check` detects already-applied and skips):
 
 The pipeline is **four stages** (⓪–③), followed by the local build + signing step (④). Stage ⓪ is the runtime sync: it force-copies the upstream runtime **and re-applies this app's own customizations** (prune + overlay), so it must always be the first thing that runs.
 
@@ -104,10 +104,10 @@ The pipeline is **four stages** (⓪–③), followed by the local build + signi
 #    modules + 3 SOs + libc++_shared.so, prune unwanted upstream files, then overlay runtime-overlays/
 node scripts/collect-runtime.mjs
 
-# ① build dsh: clean workspace residue → apply 6 patches → pnpm build host/client/web → build ../dsh-market
+# ① build dsh: clean workspace residue → apply 9 patches → pnpm build host/client/web → build ../dsh-market
 node scripts/build-dsh.mjs
 
-# ② collect dsh artifacts: pnpm deploy materialize → fill packages → sharp stub → better-sqlite3 injection → web dist + profile + dshmarket
+# ② collect dsh artifacts: pnpm deploy materialize → fill packages → sharp stub → better-sqlite3 injection → web dist + profile + dshmarket + dsh-plugins
 node scripts/collect-dsh.mjs
 
 # ③ compress dsh-dist into dsh-dist.tar.gz (--format=ustar, ~143MB, streaming decompression at runtime)
@@ -128,6 +128,19 @@ Stage ⓪ (`scripts/collect-runtime.mjs`) does a whole-directory `cpSync(..., { 
 - **Guards** — 7.8 asserts every `PRUNE_FILES` entry is absent; 7.9 asserts that for each `OVERLAY_PRE_REWRITE_FILES` entry the overlay source still contains the generic literal, and that the destination contains the app bundle name and no longer the generic literal.
 
 **To protect a new app customization:** place the modified file under `runtime-overlays/<same relative path>`, add its relative path to the correct list (`OVERLAY_FILES` / `OVERLAY_PRE_REWRITE_FILES` / `PRUNE_FILES`) in `collect-runtime.mjs`, then run `node scripts/collect-runtime.mjs` to prove it. `collect-runtime.mjs` requires `DEVECO_SDK_HOME`; `--verify-only` runs the guards only.
+
+#### Plugins: the `dsh-plugins/` convention
+
+Plugins written for this wrapper do **not** live in this project. They live in the parent workspace at `../dsh-plugins/dsh-plugin-XXX/`, where `XXX` describes the function and the directory name equals the npm package name (`dsh-plugin-XXX`, a bare/unscoped name).
+
+- **Materialization is automatic (stage ②).** `scripts/collect-dsh.mjs` → `collectPlugins()` globs `../dsh-plugins/dsh-plugin-*/`, reads each plugin's `package.json` `name`, and copies the directory to `dsh-dist/node_modules/<name>/` — the same non-scoped layout `dshmarket` uses. The destination name comes from `package.json`, so **a new plugin needs no build-script change**.
+- **Failure is loud.** If `dsh-plugins/` exists but a matched plugin has no readable `package.json`, or its name does not match `dsh-plugin-*`, the collect stage exits non-zero. If `dsh-plugins/` is absent or holds no `dsh-plugin-*` directory, the stage is a no-op with one log line.
+- **No keep-list entry.** The plugins land inside `dsh-dist.tar.gz`, and `collectPlugins()` is the last materialization step (after the `.pnpm` removal and the prebuild prune). `APP_KEEP` (in `collect-runtime.mjs`) only guards `resfile/resources/app` — which is why the loose `skills/` directory needs it, while `dshmarket`, shipped in the same node_modules layout as plugins, does not.
+- **Mounting.** Agent presets are composed per session, so the host `cordis.patch.yml` cannot reach them: a plugin is mounted by a row in `HARMONY_ENSURED_PRESET_ROWS`. `src-main/main.js` applies those rows at runtime and `collect-dsh.mjs` bakes the same rows into the artifact — the two lists are kept identical. `requireRow` confines a row to presets that already mount it (`minimal` stays untouched).
+
+**To add a plugin:** create `../dsh-plugins/dsh-plugin-XXX/package.json` (name `dsh-plugin-XXX`) plus its `lib/`, add one row to `HARMONY_ENSURED_PRESET_ROWS` in **both** `src-main/main.js` and `scripts/collect-dsh.mjs`, then re-run stage ②.
+
+> Each plugin owns its own documentation. See [`dsh-plugin-fs-mutate/README.md`](../dsh-plugins/dsh-plugin-fs-mutate/README.md) for its configuration and its **Known Limitations** — most notably that `move` copies text files only, because `ctx.fs.writeText` rejects binary content.
 
 ### Signing (externalized — secrets never committed)
 
@@ -175,6 +188,9 @@ Mode selection is driven by the **`SIGN_MODE`** environment variable (`debug` | 
 | `patches/dsh-v0.1.5-rc.2/dsh-disable-native-picker.patch` | Force directory-picker to use browse (native dialog worker fails to spawn under Electron) |
 | `patches/dsh-v0.1.5-rc.2/dsh-flock-openharmony.patch` | Grant the POSIX flock write lock in-process on `openharmony` (no native addon; single-process host, same rationale as dsh's browser-worker stub) |
 | `patches/dsh-v0.1.5-rc.2/dsh-hardlink-to-rename.patch` | HarmonyOS sandbox refuses hard links (`EACCES`) → publish exclusively by same-directory `rename`, keeping the `link`-then-`EEXIST` preference everywhere else (session-log materialization + generation publication) |
+| `patches/dsh-v0.1.5-rc.2/dsh-fs-hardlink-fallback.patch` | Also refuses hard links on hmdfs user-directory mounts (`EPERM`, no `.link` handler) → `writeFileAtomic`'s guarded-create path falls back to a same-directory `rename` when the target is verified absent, instead of failing the create with `FS_IO_ERROR`. Scoped to `fs-local`; the link preference is unchanged wherever links work |
+| `patches/dsh-v0.1.5-rc.2/dsh-fs-remove-primitive.patch` | Adds the `ctx.fs` seam's missing `remove` mutation primitive so a file tool can delete through the same sandbox fence as write/edit: a **non-abstract** `FileSystem.remove` whose default body throws (an abstract member would fail compilation for the six concrete `extends FileSystem` classes), a `fs-local` implementation in its own `remove.ts`, and a `fs-sandbox` override that runs `checkedTarget` first |
+| `patches/dsh-v0.1.5-rc.2/dsh-disable-lefthook-postinstall.patch` | Drops dsh's root `postinstall` (the lefthook git-hook installer). It refuses any checkout whose common git config carries `core.worktree` — true of every submodule checkout — so `collect-dsh`'s `pnpm deploy` aborted with `ELIFECYCLE`. Git hooks are irrelevant to a shipped HAP, and the installer never succeeded here (`dsh-hooks/` is absent) |
 
 **Prerequisite — sibling source checkouts.** This project consumes 3 sibling projects (not submodules); clone them next to this project before building:
 
@@ -216,6 +232,99 @@ hdc shell aa start -a EntryAbility -b org.fellow99.DeepseekHarnessHarmony
 > ⚠️ **Release-signed packages cannot be side-loaded.** `hdc app install` on a release-signed package fails with `code:9568322 ... signature verification failed due to not trusted app source`. For on-device regression use `-BuildMode release -SignMode debug` (release-compiled, debug-signed); release-signed packages exist only for AppGallery submission.
 
 > Requirements: DevEco Studio 4.0+, HarmonyOS SDK API 17+ (targetSdk 6.1.1(24)), Node 18+, pnpm@11, HDC.
+
+### Debugging a packaged app on device
+
+Everything below runs against an **installed** debug-signed HAP — no rebuild, no code change.
+
+#### Main-process inspector (the most capable entry point)
+
+The runtime already launches Electron with `--inspect`, so the main process exposes a Node inspector on port 9229. That inspector context has `require`, which reaches `electron` — so it can both query the dsh Host and drive the renderer.
+
+```bash
+export MSYS_NO_PATHCONV=1   # Git Bash otherwise rewrites /data/... into a Windows path
+hdc fport tcp:19229 tcp:9229            # local 19229 → device 9229 (non-default local port avoids clashes)
+curl -s http://127.0.0.1:19229/json/list   # note the webSocketDebuggerUrl
+```
+
+Evaluate over CDP with Node's global `WebSocket` (Node ≥ 22):
+
+```js
+// cdp.mjs <ws-url> <expression | @file>
+import { readFileSync } from 'node:fs';
+const [wsUrl, arg] = process.argv.slice(2);
+const expression = arg.startsWith('@') ? readFileSync(arg.slice(1), 'utf8') : arg;
+const ws = new WebSocket(wsUrl);
+ws.addEventListener('open', async () => {
+  const send = (method, params) => new Promise(resolve => {
+    const id = Math.floor(Math.random() * 1e9);
+    const onMessage = event => {
+      const msg = JSON.parse(event.data);
+      if (msg.id !== id) return;
+      ws.removeEventListener('message', onMessage);
+      resolve(msg.result);
+    };
+    ws.addEventListener('message', onMessage);
+    ws.send(JSON.stringify({ id, method, params }));
+  });
+  await send('Runtime.enable', {});
+  const result = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
+  console.log(result.exceptionDetails
+    ? 'EXCEPTION: ' + result.exceptionDetails.exception?.description
+    : JSON.stringify(result.result?.value, null, 1));
+  process.exit(0);
+});
+```
+
+Useful expressions:
+
+```js
+// which windows exist, and what URL each is on
+(async () => { const { BrowserWindow } = require('electron'); return JSON.stringify(BrowserWindow.getAllWindows().map(w => w.webContents.getURL())); })()
+// read the renderer's visible text
+(async () => { const { BrowserWindow } = require('electron'); return await BrowserWindow.getAllWindows()[0].webContents.executeJavaScript('document.body.innerText'); })()
+```
+
+**Typing into the composer.** It is a `contenteditable` rich-text editor, not a `<textarea>`, and it is React-controlled — assigning `value` or `innerText` does not register. Use CDP `Input.insertText` against the attached debugger:
+
+```js
+(async () => {
+  const { BrowserWindow } = require('electron');
+  const wc = BrowserWindow.getAllWindows()[0].webContents;
+  const SEL = '[contenteditable="true"][role="textbox"]';
+  await wc.executeJavaScript(`document.querySelector('${SEL}').focus()`);
+  if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
+  await wc.debugger.sendCommand('Input.insertText', { text: '…' });
+  return await wc.executeJavaScript(`document.querySelector('${SEL}').innerText.length`);
+})()
+```
+
+To send, click the button whose `aria-label` is `发送消息`.
+
+#### Why an external browser (Playwright and friends) cannot be used
+
+Every Host RPC method requires one browser session: `GET /` accepts the launch token only as `?token=<launchToken>` and writes an authority-bound signed cookie, while a missing cookie returns **401 before RPC dispatch**. The launch token is never logged (`web-runtime` runs with `printUrl: false`), and the renderer redirects to a clean `/` after the exchange — so an external browser cannot authenticate, not even through `hdc fport`.
+
+#### Renderer UI automation via `uitest` (clicks only)
+
+```bash
+hdc shell uitest dumpLayout -p /data/local/tmp/layout.json
+hdc file recv /data/local/tmp/layout.json ./layout.json   # every node's text and bounds
+hdc shell uitest uiInput click <x> <y>                     # clicks DO reach the Web content
+```
+
+- ⚠️ `uitest uiInput text` and `uiInput keyEvent` do **not** reach Web content (the editor is not a native control) — use the inspector's `Input.insertText` for text.
+- The dump spans the whole screen, so other windows (system Settings, for example) appear alongside the app. Run `hdc shell aa start -a EntryAbility -b org.fellow99.DeepseekHarnessHarmony`, then re-dump, to confirm the app is in the foreground before clicking.
+
+#### Is the Host up, and on which port?
+
+```bash
+hdc shell "hilog -x | grep dsh-harmony | tail -20"   # "host 就绪: http://<lan-ip>:<port>/"
+```
+
+Probing `http://127.0.0.1:<port>/` through `hdc fport` and getting **401** confirms the webserver is reachable and its auth fence is active.
+
+> ⚠️ **Security.** `--inspect` lets anyone with `hdc` fully control the host process (`require` is available in that context). It comes from the upstream runtime's default arguments, not from this project. That is acceptable for local debugging, but evaluate removing it from a release build before AppGallery submission.
 
 ### Signing & restricted permissions (full procedure)
 
