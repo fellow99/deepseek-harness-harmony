@@ -152,6 +152,22 @@ Either way the directory name equals the npm package name (a bare / unscoped nam
 
 > Each plugin owns its own documentation. See [`plugins/harmony-plugin-fs-mutate/README.md`](plugins/harmony-plugin-fs-mutate/README.md) for its configuration and its **Known Limitations** — most notably that `move` copies text files only, because `ctx.fs.writeText` rejects binary content.
 
+#### Skills: two directories, two roles
+
+Tool skills follow the same two-tier split, with one deliberate difference: **skill names carry no prefix.** A skill's `name` is a model-visible identifier and the string a human types after `/name`, and dsh's own skills are unprefixed too — so ownership is expressed by the **directory**, not the name.
+
+| Directory | Role |
+|---|---|
+| `../skills/` (parent workspace) | **Generic** — applies to any dsh shell |
+| `skills/` (this project) | **This project's own** — describes this wrapper's runtime (HarmonyOS HAP sandbox, `hmdfs`, capability gaps); shipped inside the HAP and provided at runtime as the dsh **bundled** skill root |
+
+- **The wiring is already complete — no build-script change is needed.** Stage ⓪ `collect-runtime.mjs` restores `skills/` into `resfile/resources/app/skills` (`restoreTree`), `APP_KEEP` keeps that directory across re-runs, and `src-main/main.js` sets `DSH_BUNDLED_SKILL_DIR` to it at startup. The directory deliberately sits **outside** `dsh-dist.tar.gz`, so updating a skill needs only a new HAP — no ② collect-dsh, no re-tar, and no clearing the device's `$DSH_HOME/dsh-dist`.
+- **Bundled is the lowest-precedence skill root (rank 600).** A same-named skill in the project (`.dsh/skills`, rank 100) or the user's `$DSH_HOME/skills` (rank 400) **overrides** the bundled one. That is intentional — it lets a user replace built-in behaviour.
+- **Loading is lazy, not startup.** At process start only `DSH_BUNDLED_SKILL_DIR` is configured. The model automatically sees just the skill **catalog** (name + a description truncated to 500 chars), injected as a durable user-role message before a session's **first request**; a skill **body** loads on demand via the `skill` tool or a human `/name`, and is never cached.
+- **The skill format is dsh's, not ours:** top level only (`<name>/SKILL.md` or `<name>.md` — a nested `**/SKILL.md` is not discovered); frontmatter requires `name` + `description`, optionally `whenToUse` / `metadata` / `disable-model-invocation` / `user-invocable` (the camelCase legacy keys are rejected). Full rules in [`skills/README.md`](skills/README.md), generic side in [`../skills/README.md`](../skills/README.md).
+
+> ⚠️ A skill describes this build's **capability boundary**, so a **stale** skill is worse than none: `harmony-runtime-capabilities` once still claimed `delete`/`move` were absent after they shipped, and the model then refused to use the delivered tools. Update the skills that reference a capability whenever that capability changes.
+
 ### Signing (externalized — secrets never committed)
 
 Signing material is **externalized** so `build-profile.json5` stays secret-free and safe to commit. There are **two** gitignored config files, one per signing mode:
@@ -503,6 +519,7 @@ This project and the 3 consumed projects plus 1 architecture-reference project l
 │   ├── patches/                   # dsh upstream patches (6)
 │   ├── docs/                      # Engineering plan and final implementation record
 │   ├── plugins/                   # This project's own plugins (harmony-plugin-XXX; baked into the HAP, all loaded by default)
+│   ├── skills/                    # This project's own tool skills (kebab-case, no prefix; shipped in the HAP as the bundled skill root)
 │   └── specs/                     # Spec documents (as-built; see specs/README.md for index)
 │
 ├── harmonypc-electron/            # Electron-on-HarmonyOS runtime (Electron 37 / Node 22.17.0)

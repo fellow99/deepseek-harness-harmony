@@ -152,6 +152,22 @@ tar -czf web_engine/src/main/resources/resfile/resources/app/dsh-dist.tar.gz --f
 
 > 插件各自持有自己的文档。配置与 **Known Limitations（已知限制）** 见 [`plugins/harmony-plugin-fs-mutate/README_zh.md`](plugins/harmony-plugin-fs-mutate/README_zh.md) —— 其中最需注意的是 `move` 仅支持文本文件，因为 `ctx.fs.writeText` 拒绝二进制内容。
 
+#### 技能：两个目录，两种定位
+
+工具技能沿用同一套两层分工，但有一处**刻意的差异**：**技能名不加前缀**。技能的 `name` 是模型可见标识、也是人工 `/name` 要输入的字符串，且 dsh 自身的技能也不带前缀 —— 归属由**目录**表达，不由名字表达。
+
+| 目录 | 定位 |
+|---|---|
+| `../skills/`（父工程） | **通用** —— 在任何 dsh 壳上都成立 |
+| `skills/`（本工程） | **本工程专用** —— 描述本壳的运行期（HarmonyOS HAP 沙箱、`hmdfs`、能力缺口）；随 HAP 分发，运行期作为 dsh 的 **bundled** 技能根提供 |
+
+- **装配已完成，无需改构建脚本。** 阶段 ⓪ `collect-runtime.mjs` 用 `restoreTree` 把 `skills/` 复原进 `resfile/resources/app/skills`；`APP_KEEP` 使其在重复执行后仍保留；`src-main/main.js` 启动时把 `DSH_BUNDLED_SKILL_DIR` 指向它。该目录**刻意放在 `dsh-dist.tar.gz` 之外** —— 因此更新技能只换 HAP 即可：无需重跑 ② collect-dsh、无需重打 tar、无需清设备 `$DSH_HOME/dsh-dist`。
+- **bundled 是优先级最低的技能根（rank 600）。** 同名的项目级（`.dsh/skills`，rank 100）或用户级（`$DSH_HOME/skills`，rank 400）技能会**覆盖**内置技能。这是有意设计 —— 让用户能改写内置行为。
+- **加载是惰性的，不是启动时。** 进程启动只配置 `DSH_BUNDLED_SKILL_DIR`；模型自动看到的仅是技能**目录**（名称 + 截断 500 字的描述），在会话**首次请求前**作为持久 user-role 消息注入；技能**正文按需加载**（`skill` 工具或人工 `/name`），且不缓存。
+- **技能格式是 dsh 的、不是我们自定义的**：仅顶层（`<名>/SKILL.md` 或 `<名>.md`，嵌套 `**/SKILL.md` 不被发现）；frontmatter 必填 `name` + `description`，可选 `whenToUse` / `metadata` / `disable-model-invocation` / `user-invocable`（驼峰旧键被拒）。完整规则见 [`skills/README.md`](skills/README.md)，通用侧见 [`../skills/README.md`](../skills/README.md)。
+
+> ⚠️ 技能描述的是本构建的**能力边界**，**过期技能比没有技能更有害**：`harmony-runtime-capabilities` 曾在 `delete`/`move` 交付后仍声称它们不存在，导致模型拒绝使用已交付的工具。**能力变化时，必须同步更新引用了该能力的技能。**
+
 ### 签名（外置，密钥永不入库）
 
 签名材料**外置**，`build-profile.json5` 因此保持无密钥、可安全入库。共有**两个** gitignored 配置文件，每个签名模式一个：
@@ -466,6 +482,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1   # -Task App
 │   ├── patches/                   # dsh 上游 patch（6 个）
 │   ├── docs/                      # 工程规划与最终实现记录
 │   ├── plugins/                   # 本工程专用插件（harmony-plugin-XXX；编译期打入 HAP，运行期全部默认加载）
+│   ├── skills/                    # 本工程专用工具技能（功能性 kebab-case、无前缀；随 HAP 分发，作为 bundled 技能根提供）
 │   └── specs/                     # 规范文档（as-built；见 specs/README.md 索引）
 │
 ├── harmonypc-electron/            # Electron-on-鸿蒙运行时（Electron 37 / Node 22.17.0）
