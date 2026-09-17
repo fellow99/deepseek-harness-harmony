@@ -107,7 +107,7 @@ node scripts/collect-runtime.mjs
 # ① 构建 dsh：清理 workspace 残留 → apply 6 patch → pnpm build host/client/web → build ../dsh-market
 node scripts/build-dsh.mjs
 
-# ② 收集 dsh 产物：pnpm deploy 物化 → 补包 → sharp stub → better-sqlite3 注入 → web dist + profile + dshmarket + dsh-plugins
+# ② 收集 dsh 产物：pnpm deploy 物化 → 补包 → sharp stub → better-sqlite3 注入 → web dist + profile + dshmarket + plugins
 node scripts/collect-dsh.mjs
 
 # ③ 压缩 dsh-dist 为 dsh-dist.tar.gz（--format=ustar，~143MB，运行时流式解压）
@@ -129,18 +129,28 @@ tar -czf web_engine/src/main/resources/resfile/resources/app/dsh-dist.tar.gz --f
 
 **保护新的应用定制：** 把改动后的文件放到 `runtime-overlays/<相同相对路径>`，把其相对路径加入 `collect-runtime.mjs` 中正确的列表（`OVERLAY_FILES` / `OVERLAY_PRE_REWRITE_FILES` / `PRUNE_FILES`），然后跑 `node scripts/collect-runtime.mjs` 验证。`collect-runtime.mjs` 需要 `DEVECO_SDK_HOME`；`--verify-only` 只跑守卫。
 
-#### 插件：`dsh-plugins/` 约定
+#### 插件：两个目录，两种定位
 
-本壳自研插件**不放在本工程**，而是放在父工程 `../dsh-plugins/dsh-plugin-XXX/`：目录名即 npm 包名（`dsh-plugin-XXX`，裸包名/非 scoped），`XXX` 描述功能。
+本壳的插件按**"谁能消费它"**分工：
 
-- **物化自动完成（阶段 ②）** —— `scripts/collect-dsh.mjs` 的 `collectPlugins()` 通配 `../dsh-plugins/dsh-plugin-*/`，读取各插件 `package.json` 的 `name`，把该目录复制到 `dsh-dist/node_modules/<name>/`（与 `dshmarket` 相同的非 scoped 布局）。落地目录名取自 `package.json`，因此**新增插件无需改动构建脚本**。
-- **失败即硬报错** —— `dsh-plugins/` 存在、但匹配到的插件缺可读的 `package.json`，或包名不符 `dsh-plugin-*`，收集阶段直接非零退出。`dsh-plugins/` 不存在或没有 `dsh-plugin-*` 目录时，只打印一行日志、不做任何事。
+| 目录 | 定位 | 命名 |
+|---|---|---|
+| `../dsh-plugins/`（父工程） | **通用**、可插拔插件 —— 不依赖任何特定壳的补丁，任何壳都能消费 | `dsh-plugin-XXX` |
+| `plugins/`（本工程） | **本工程专用**插件 —— 依赖本壳的补丁集 / profile / 运行期适配；编译期打入 HAP，运行期**全部默认加载** | `harmony-plugin-XXX` |
+
+两种情况下目录名都等于 npm 包名（裸包名 / 非 scoped）。判断一个插件该放哪边：*「把它装到另一个 dsh 壳（例如 `deepseek-harness-desktop`）上，它还能工作吗？」* 能 → 通用，放父工程 `dsh-plugins/`；不能 → 本工程 `plugins/`。详见 [`plugins/README.md`](plugins/README.md) 与 [`../dsh-plugins/README.md`](../dsh-plugins/README.md)。
+
+- **物化自动完成（阶段 ②）** —— `scripts/collect-dsh.mjs` 的 `collectPlugins()` 通配 `plugins/harmony-plugin-*/`，读取各插件 `package.json` 的 `name`，把该目录复制到 `dsh-dist/node_modules/<name>/`（与 `dshmarket` 相同的非 scoped 布局）。落地目录名取自 `package.json`，因此**新增插件无需改动构建脚本**。
+- **失败即硬报错** —— `plugins/` 存在、但匹配到的插件缺可读的 `package.json`，或包名不符 `harmony-plugin-*`，收集阶段直接非零退出。`plugins/` 不存在或没有 `harmony-plugin-*` 目录时，只打印一行日志、不做任何事。
 - **无需加入 keep 白名单** —— 插件落在 `dsh-dist.tar.gz` 内部，且 `collectPlugins()` 是最后一个物化步骤（在 `.pnpm` 删除与 prebuilds 剪裁之后）。`collect-runtime.mjs` 的 `APP_KEEP` 只守护 `resfile/resources/app` —— 这正是散放的 `skills/` 需要它的原因，而与插件同布局的 `dshmarket` 并不需要。
 - **挂载方式** —— agent preset 按会话独立组合、host 的 `cordis.patch.yml` 管不到，故插件靠 `HARMONY_ENSURED_PRESET_ROWS` 里的一行挂载：`src-main/main.js` 在运行时施加，`collect-dsh.mjs` 把同样的行烘进产物，两张表保持逐条镜像；`requireRow` 限定只加到已挂载该行的 preset（`minimal` 不受影响）。
+- **运行期镜像** —— preset 行里的裸包名由 `dsh-agent-presets` 的 discovery 判定，它会**从 profile 目录向上**（`$DSH_HOME/profiles/desktop`）走 `node_modules` 找包；因此光待在 `dsh-dist/node_modules` 里不够：`src-main/main.js` 的 `ensureDshPluginsProfileLink()` 每次启动都把 `harmony-plugin-*` 复制（**非 symlink** —— 鸿蒙沙箱以 `EACCES` 拒绝 symlink）到 `$DSH_HOME/profiles/node_modules/`，并清理改名后残留的同族陈旧目录。
 
-**新增一个插件：** 新建 `../dsh-plugins/dsh-plugin-XXX/package.json`（name 为 `dsh-plugin-XXX`）及其 `lib/`，在 `src-main/main.js` 与 `scripts/collect-dsh.mjs` **两处** `HARMONY_ENSURED_PRESET_ROWS` 各加一行，然后重跑阶段 ②。
+**新增一个插件：** 新建 `plugins/harmony-plugin-XXX/package.json`（name 为 `harmony-plugin-XXX`）及其 `lib/`，在 `src-main/main.js` 与 `scripts/collect-dsh.mjs` **两处** `HARMONY_ENSURED_PRESET_ROWS` 各加一行，然后重跑阶段 ②。
 
-> 插件各自持有自己的文档。配置与 **Known Limitations（已知限制）** 见 [`dsh-plugin-fs-mutate/README_zh.md`](../dsh-plugins/dsh-plugin-fs-mutate/README_zh.md) —— 其中最需注意的是 `move` 仅支持文本文件，因为 `ctx.fs.writeText` 拒绝二进制内容。
+> ⚠️ preset 行的 `name` 是**运行时导入说明符**，不是注释：两张表漏改一处，编译期毫无反应，只有会话创建会失效（`agent-preset/invalid`，`row "<id>" names a plugin that cannot be resolved`）。
+
+> 插件各自持有自己的文档。配置与 **Known Limitations（已知限制）** 见 [`plugins/harmony-plugin-fs-mutate/README_zh.md`](plugins/harmony-plugin-fs-mutate/README_zh.md) —— 其中最需注意的是 `move` 仅支持文本文件，因为 `ctx.fs.writeText` 拒绝二进制内容。
 
 ### 签名（外置，密钥永不入库）
 
@@ -455,6 +465,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1   # -Task App
 │   ├── profiles/desktop/          # 自定义 desktop profile（cordis.patch.yml + package.json）
 │   ├── patches/                   # dsh 上游 patch（6 个）
 │   ├── docs/                      # 工程规划与最终实现记录
+│   ├── plugins/                   # 本工程专用插件（harmony-plugin-XXX；编译期打入 HAP，运行期全部默认加载）
 │   └── specs/                     # 规范文档（as-built；见 specs/README.md 索引）
 │
 ├── harmonypc-electron/            # Electron-on-鸿蒙运行时（Electron 37 / Node 22.17.0）

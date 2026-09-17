@@ -63,8 +63,8 @@
 | agent preset 行 `id` | `fs-mutate`（**保持不变**：行 id 是稳定身份，改名无收益且徒增风险） |
 | 旧位置 | `dsh-plugins/dsh-plugin-fs-mutate/` **删除** |
 
-**FR-1.1** 目录名必须等于 npm 包名（`harness-plugin-*` 通配下二者一致），以维持两端 README 声明的约定。
-**FR-1.2** 插件目录内不得残留任何旧包名字符串 `dsh-plugin-fs-mutate`。
+**FR-1.1** 目录名必须等于 npm 包名（`harmony-plugin-*` 通配下二者一致），以维持两端 README 声明的约定。
+**FR-1.2** 插件目录内不得残留任何旧包名字符串 `dsh-plugin-fs-mutate`。**包含 JSDoc `@module` 标签与错误文案前缀**——它们是名字令牌，留着会让抛错文案指向一个已不存在的包名。全量令牌共 12 处、分布于 7 个文件（见 FR-6.1）。
 
 ### FR-2 构建期物化
 
@@ -98,7 +98,9 @@
 
 ### FR-6 零行为变更
 
-**FR-6.1** `lib/sandbox.js`、`lib/delete.js`、`lib/move.js` 三个文件在迁移中**内容必须逐字节不变**（仅 `lib/index.js` 因改名而变）。
+**FR-6.1** 迁移对插件源码的改动**仅限包名令牌**：全量 `diff -r`（旧目录 vs 新目录）必须**只有名字行不同，恰好 12 行**，不得有任何其它差异。分布为：`lib/index.js` 3 行（`@module`、`name` 导出、错误文案）、`lib/sandbox.js` 2 行（`@module`、错误文案）、`lib/delete.js` 1 行（`@module`）、`lib/move.js` 1 行（`@module`）、`package.json` 1 行（`name`）、`README.md` 2 行（标题、配置示例）、`README_zh.md` 2 行（标题、配置示例）。
+
+> **判定口径说明**：本条原写作"`lib/{sandbox,delete,move}.js` 逐字节不变"，在开发阶段被证伪——`lib/sandbox.js:77` 的抛错文案与三个文件的 `@module` 标签都内嵌包名。二者不可兼得，且 **FR-1.2（零残留）优先**：错误文案若仍报旧包名，就是一条会误导排障的假线索。故判据从"逐字节不变"改为"仅名字令牌行不同"，其真正要保护的**行为零变更**由"差异行数 == 名字令牌数"等价保证。
 **FR-6.2** 工具名 `delete` / `move`、参数 schema、结果文案、错误文案、沙箱升级行为、`Config.maxTransferBytes` 语义与默认值（`10485760`）均不变。
 
 ## 4. 目录约定
@@ -117,7 +119,7 @@
 | 编号 | 验收标准 | 验证方式 |
 |---|---|---|
 | AC-1 | `deepseek-harness-harmony/plugins/harmony-plugin-fs-mutate/` 含 7 个文件（`package.json`、`README.md`、`README_zh.md`、`lib/{index,sandbox,delete,move}.js`） | `find` 列举 |
-| AC-2 | 全工程 `grep 'dsh-plugin-fs-mutate'` 无残留（构建产物与 gitignored 目录除外） | `grep -rn` |
+| AC-2 | 全工程 `grep 'dsh-plugin-fs-mutate'` 无残留（构建产物、gitignored 目录、以及 `specs/201-plugin-fs-mutate/` 内的改名映射表除外 —— 后者的用途就是记录旧名） | `grep -rn` |
 | AC-3 | `dsh-plugins/dsh-plugin-fs-mutate/` 已删除，`dsh-plugins/` 仅剩 `README.md` | `ls` |
 | AC-4 | 两处 `HARMONY_ENSURED_PRESET_ROWS` 的 `name` 均为 `harmony-plugin-fs-mutate` 且逐条一致 | 双文件 `grep` 对照 |
 | AC-5 | `collect-dsh` 后 `dsh-dist/node_modules/harmony-plugin-fs-mutate/package.json` 存在，且**不存在** `dsh-plugin-fs-mutate` | 构建断言 |
@@ -128,7 +130,7 @@
 | AC-10 | 真机 `delete` 工具真实删除文件；`move` 工具真实移动文件 | `--inspect` 发起对话 + 读工具结果 |
 | AC-11 | 既有能力不退化：列目录（`tool-str-replace-editor` 的 `view`）与 `skill` 工具仍可用 | `--inspect` 对话 |
 | AC-12 | 两个 `README.md` 已就位；两端 `README.md` / `README_zh.md` 的插件约定章节已改为新分工 | 人工阅读 |
-| AC-13 | `lib/{sandbox,delete,move}.js` 内容未变 | 迁移前后 `md5` 对比 |
+| AC-13 | 插件源码差异**仅限包名令牌，恰好 12 行**，无其它改动 | `diff -r` 旧目录 vs 新目录 |
 
 ## 6. 约束
 

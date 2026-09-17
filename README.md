@@ -107,7 +107,7 @@ node scripts/collect-runtime.mjs
 # ① build dsh: clean workspace residue → apply 9 patches → pnpm build host/client/web → build ../dsh-market
 node scripts/build-dsh.mjs
 
-# ② collect dsh artifacts: pnpm deploy materialize → fill packages → sharp stub → better-sqlite3 injection → web dist + profile + dshmarket + dsh-plugins
+# ② collect dsh artifacts: pnpm deploy materialize → fill packages → sharp stub → better-sqlite3 injection → web dist + profile + dshmarket + plugins
 node scripts/collect-dsh.mjs
 
 # ③ compress dsh-dist into dsh-dist.tar.gz (--format=ustar, ~143MB, streaming decompression at runtime)
@@ -129,18 +129,28 @@ Stage ⓪ (`scripts/collect-runtime.mjs`) does a whole-directory `cpSync(..., { 
 
 **To protect a new app customization:** place the modified file under `runtime-overlays/<same relative path>`, add its relative path to the correct list (`OVERLAY_FILES` / `OVERLAY_PRE_REWRITE_FILES` / `PRUNE_FILES`) in `collect-runtime.mjs`, then run `node scripts/collect-runtime.mjs` to prove it. `collect-runtime.mjs` requires `DEVECO_SDK_HOME`; `--verify-only` runs the guards only.
 
-#### Plugins: the `dsh-plugins/` convention
+#### Plugins: two directories, two roles
 
-Plugins written for this wrapper do **not** live in this project. They live in the parent workspace at `../dsh-plugins/dsh-plugin-XXX/`, where `XXX` describes the function and the directory name equals the npm package name (`dsh-plugin-XXX`, a bare/unscoped name).
+This wrapper's plugins are split by **who can consume them**:
 
-- **Materialization is automatic (stage ②).** `scripts/collect-dsh.mjs` → `collectPlugins()` globs `../dsh-plugins/dsh-plugin-*/`, reads each plugin's `package.json` `name`, and copies the directory to `dsh-dist/node_modules/<name>/` — the same non-scoped layout `dshmarket` uses. The destination name comes from `package.json`, so **a new plugin needs no build-script change**.
-- **Failure is loud.** If `dsh-plugins/` exists but a matched plugin has no readable `package.json`, or its name does not match `dsh-plugin-*`, the collect stage exits non-zero. If `dsh-plugins/` is absent or holds no `dsh-plugin-*` directory, the stage is a no-op with one log line.
+| Directory | Role | Naming |
+|---|---|---|
+| `../dsh-plugins/` (parent workspace) | **Generic**, pluggable plugins — no dependency on any wrapper-specific patch, so any shell can consume them | `dsh-plugin-XXX` |
+| `plugins/` (this project) | **This project's own** plugins — they depend on this wrapper's patch set / profile / runtime adaptations; baked into the HAP at build time and **all loaded by default** at runtime | `harmony-plugin-XXX` |
+
+Either way the directory name equals the npm package name (a bare / unscoped name). The test for which side a plugin belongs on: *"would it still work if installed into another dsh shell (e.g. `deepseek-harness-desktop`)?"* Yes → generic, parent `dsh-plugins/`; no → this project's `plugins/`. See [`plugins/README.md`](plugins/README.md) and [`../dsh-plugins/README.md`](../dsh-plugins/README.md).
+
+- **Materialization is automatic (stage ②).** `scripts/collect-dsh.mjs` → `collectPlugins()` globs `plugins/harmony-plugin-*/`, reads each plugin's `package.json` `name`, and copies the directory to `dsh-dist/node_modules/<name>/` — the same non-scoped layout `dshmarket` uses. The destination name comes from `package.json`, so **a new plugin needs no build-script change**.
+- **Failure is loud.** If `plugins/` exists but a matched plugin has no readable `package.json`, or its name does not match `harmony-plugin-*`, the collect stage exits non-zero. If `plugins/` is absent or holds no `harmony-plugin-*` directory, the stage is a no-op with one log line.
 - **No keep-list entry.** The plugins land inside `dsh-dist.tar.gz`, and `collectPlugins()` is the last materialization step (after the `.pnpm` removal and the prebuild prune). `APP_KEEP` (in `collect-runtime.mjs`) only guards `resfile/resources/app` — which is why the loose `skills/` directory needs it, while `dshmarket`, shipped in the same node_modules layout as plugins, does not.
 - **Mounting.** Agent presets are composed per session, so the host `cordis.patch.yml` cannot reach them: a plugin is mounted by a row in `HARMONY_ENSURED_PRESET_ROWS`. `src-main/main.js` applies those rows at runtime and `collect-dsh.mjs` bakes the same rows into the artifact — the two lists are kept identical. `requireRow` confines a row to presets that already mount it (`minimal` stays untouched).
+- **Runtime mirroring.** A bare package name in a preset row is resolved by `dsh-agent-presets`' discovery walking `node_modules` **upward from the profile directory** (`$DSH_HOME/profiles/desktop`), so living in `dsh-dist/node_modules` is not enough: `ensureDshPluginsProfileLink()` (in `src-main/main.js`) copies every `harmony-plugin-*` into `$DSH_HOME/profiles/node_modules/` on each start (copy, not symlink — the HarmonyOS sandbox rejects symlinks with `EACCES`), and prunes same-family stale directories left behind by a rename.
 
-**To add a plugin:** create `../dsh-plugins/dsh-plugin-XXX/package.json` (name `dsh-plugin-XXX`) plus its `lib/`, add one row to `HARMONY_ENSURED_PRESET_ROWS` in **both** `src-main/main.js` and `scripts/collect-dsh.mjs`, then re-run stage ②.
+**To add a plugin:** create `plugins/harmony-plugin-XXX/package.json` (name `harmony-plugin-XXX`) plus its `lib/`, add one row to `HARMONY_ENSURED_PRESET_ROWS` in **both** `src-main/main.js` and `scripts/collect-dsh.mjs`, then re-run stage ②.
 
-> Each plugin owns its own documentation. See [`dsh-plugin-fs-mutate/README.md`](../dsh-plugins/dsh-plugin-fs-mutate/README.md) for its configuration and its **Known Limitations** — most notably that `move` copies text files only, because `ctx.fs.writeText` rejects binary content.
+> ⚠️ A preset row's `name` is a **runtime import specifier**, not a comment: miss one of the two lists and nothing fails at compile time — session creation simply breaks (`agent-preset/invalid`, `row "<id>" names a plugin that cannot be resolved`).
+
+> Each plugin owns its own documentation. See [`plugins/harmony-plugin-fs-mutate/README.md`](plugins/harmony-plugin-fs-mutate/README.md) for its configuration and its **Known Limitations** — most notably that `move` copies text files only, because `ctx.fs.writeText` rejects binary content.
 
 ### Signing (externalized — secrets never committed)
 
@@ -492,6 +502,7 @@ This project and the 3 consumed projects plus 1 architecture-reference project l
 │   ├── profiles/desktop/          # Custom desktop profile (cordis.patch.yml + package.json)
 │   ├── patches/                   # dsh upstream patches (6)
 │   ├── docs/                      # Engineering plan and final implementation record
+│   ├── plugins/                   # This project's own plugins (harmony-plugin-XXX; baked into the HAP, all loaded by default)
 │   └── specs/                     # Spec documents (as-built; see specs/README.md for index)
 │
 ├── harmonypc-electron/            # Electron-on-HarmonyOS runtime (Electron 37 / Node 22.17.0)

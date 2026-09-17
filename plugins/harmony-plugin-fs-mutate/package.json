@@ -1,0 +1,23 @@
+{
+  "name": "harmony-plugin-fs-mutate",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DeepSeek Harness plugin: the model-facing delete and move filesystem tools over the sandbox-fenced ctx.fs removal primitive",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js"
+  },
+  "files": [
+    "lib",
+    "README.md",
+    "README_zh.md"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/dsh-fs": "*",
+    "@deepseek-ai/dsh-sandbox": "*",
+    "@deepseek-ai/dsh-tools": "*",
+    "@deepseek-ai/schemastery": "*"
+  }
+}

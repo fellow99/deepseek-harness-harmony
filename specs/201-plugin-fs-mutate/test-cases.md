@@ -65,16 +65,16 @@
 | 证据 | grep 输出 |
 | 备注 | 这是 AC-6 的直接证据；产物是运行时真正被读取的东西 |
 
-### TC-B5 —— 三个未改名文件内容未变
+### TC-B5 —— 插件源码差异仅限包名令牌
 
 | 项 | 内容 |
 |---|---|
-| 目的 | 落实 FR-6（纯迁移，行为零变更） |
-| 前置 | 迁移**前**已记录 `lib/{sandbox,delete,move}.js` 的 md5 |
-| 步骤 | 1. 迁移前：`md5sum dsh-plugins/dsh-plugin-fs-mutate/lib/*.js`<br>2. 迁移后：`md5sum plugins/harmony-plugin-fs-mutate/lib/*.js`<br>3. 对比 |
-| 期望 | `sandbox.js` / `delete.js` / `move.js` 三项 md5 完全一致 |
-| 证据 | 前后 md5 表 |
-| 失败含义 | 迁移过程损坏了插件行为 |
+| 目的 | 落实 FR-6（纯迁移，行为零变更）与 FR-1.2（零残留） |
+| 步骤 | 1. `diff -r dsh-plugins/dsh-plugin-fs-mutate plugins/harmony-plugin-fs-mutate`<br>2. 统计差异行数<br>3. 逐行确认差异均为纯包名令牌替换<br>4. `grep -rn "dsh-plugin-fs-mutate" plugins/` |
+| 期望 | 差异**恰好 12 行**（`index.js` 3 / `sandbox.js` 2 / `delete.js` 1 / `move.js` 1 / `package.json` 1 / 两份 README 各 2），每行仅包名不同；旧名 grep **零命中** |
+| 证据 | `diff -r` 全量输出 + 差异行数 + grep 结果 |
+| 失败含义 | 差异行数 ≠ 12 → 有别于包名的改动混入，行为可能已变 |
+| 判据变更记录 | 本条原判据为「`lib/{sandbox,delete,move}.js` md5 逐字节一致」，开发阶段被证伪（见 spec.md FR-6.1）。md5 只能证明"没动"，`diff -r` 能同时证明"动的都是名字"，是**更强**的判据 |
 
 ### TC-B6 —— 全工程旧名零残留
 
@@ -212,4 +212,4 @@
 | AC-10 `delete`/`move` 真实生效 | TC-D4, TC-D5 |
 | AC-11 既有能力不退化 | TC-R1, TC-R2, TC-R3 |
 | AC-12 文档就位 | 人工阅读（spec/plan 已列清单） |
-| AC-13 三文件未变 | TC-B5 |
+| AC-13 源码差异仅限 12 行包名令牌 | TC-B5 |

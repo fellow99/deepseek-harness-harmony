@@ -139,32 +139,33 @@ function collectDshMarket() {
   console.log('[collect-dsh] 物化 dshmarket（lib/client/cordis.patch.yml/package.json + 运行时依赖）');
 }
 
-/** 物化父工程 dsh-plugins/ 下的自研插件到 dsh-dist/node_modules/<包名>。
- *  约定：插件源码统一放在父工程 `../dsh-plugins/`，目录名与包名同为 `dsh-plugin-XXX`（XXX 描述功能）；
- *  本函数按 `dsh-plugin-*` 通配自动发现，落地目录名一律取自各插件 package.json 的 `name`
+/** 物化本工程 plugins/ 下的专用插件到 dsh-dist/node_modules/<包名>。
+ *  约定：本工程专用插件统一放在 `<projectRoot>/plugins/`，目录名与包名同为 `harmony-plugin-XXX`
+ *  （XXX 描述功能）；通用可插拔插件放父工程 `../dsh-plugins/`，命名 `dsh-plugin-XXX`，不由本脚本处理。
+ *  本函数按 `harmony-plugin-*` 通配自动发现，落地目录名一律取自各插件 package.json 的 `name`
  *  （而非目录名），因此以后新增插件无需改动本脚本。
  *  与 dshmarket 同策略：非 scoped 包直接落在 node_modules 顶层，agent preset 行按包名挂载即可解析。
- *  硬失败：dsh-plugins 存在、但匹配到的插件缺 package.json / JSON 非法 / 包名不符约定（同时防 `../` 逃逸）。
- *  无 op：dsh-plugins 缺失或无 dsh-plugin-* 目录时只打印一行日志。幂等：目标已有 package.json 即跳过。 */
+ *  硬失败：plugins 存在、但匹配到的插件缺 package.json / JSON 非法 / 包名不符约定（同时防 `../` 逃逸）。
+ *  无 op：plugins 缺失或无 harmony-plugin-* 目录时只打印一行日志。幂等：目标已有 package.json 即跳过。 */
 function collectPlugins() {
-  const pluginsRoot = resolve(projectRoot, '../dsh-plugins');
+  const pluginsRoot = resolve(projectRoot, 'plugins');
   if (!existsSync(pluginsRoot)) {
-    console.log(`[collect-dsh] dsh-plugins 目录不存在，跳过插件物化: ${pluginsRoot}`);
+    console.log(`[collect-dsh] plugins 目录不存在，跳过插件物化: ${pluginsRoot}`);
     return;
   }
   const pluginDirs = readdirSync(pluginsRoot, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && entry.name.startsWith('dsh-plugin-'))
+    .filter((entry) => entry.isDirectory() && entry.name.startsWith('harmony-plugin-'))
     .map((entry) => entry.name)
     .sort();
   if (pluginDirs.length === 0) {
-    console.log('[collect-dsh] dsh-plugins 下没有 dsh-plugin-* 目录，跳过插件物化');
+    console.log('[collect-dsh] plugins 下没有 harmony-plugin-* 目录，跳过插件物化');
     return;
   }
   for (const dirName of pluginDirs) {
     const src = resolve(pluginsRoot, dirName);
     const pkgJson = resolve(src, 'package.json');
     if (!existsSync(pkgJson)) {
-      console.error(`[collect-dsh] 插件 ${dirName} 缺少 package.json（约定 dsh-plugin-XXX 必须是可发布的包）: ${pkgJson}`);
+      console.error(`[collect-dsh] 插件 ${dirName} 缺少 package.json（约定 harmony-plugin-XXX 必须是可发布的包）: ${pkgJson}`);
       process.exit(1);
     }
     let name;
@@ -174,9 +175,9 @@ function collectPlugins() {
       console.error(`[collect-dsh] 插件 ${dirName} 的 package.json 无法解析: ${err.message}`);
       process.exit(1);
     }
-    // 包名即落地目录名：只接受裸包名 dsh-plugin-*，既落实命名约定，也杜绝 `../` 逃逸出 node_modules
-    if (typeof name !== 'string' || !/^dsh-plugin-[A-Za-z0-9._-]+$/.test(name)) {
-      console.error(`[collect-dsh] 插件 ${dirName} 的包名不符合 dsh-plugin-* 约定: ${JSON.stringify(name)}`);
+    // 包名即落地目录名：只接受裸包名 harmony-plugin-*，既落实命名约定，也杜绝 `../` 逃逸出 node_modules
+    if (typeof name !== 'string' || !/^harmony-plugin-[A-Za-z0-9._-]+$/.test(name)) {
+      console.error(`[collect-dsh] 插件 ${dirName} 的包名不符合 harmony-plugin-* 约定: ${JSON.stringify(name)}`);
       process.exit(1);
     }
     const dest = resolve(distDir, 'node_modules', name);
@@ -191,7 +192,7 @@ function collectPlugins() {
       dereference: true,
       filter: (s) => !s.includes('node_modules'),
     });
-    console.log(`[collect-dsh] 物化插件 ${name} <- dsh-plugins/${dirName}`);
+    console.log(`[collect-dsh] 物化插件 ${name} <- plugins/${dirName}`);
   }
 }
 
@@ -353,7 +354,7 @@ const HARMONY_DISABLED_PRESET_ROWS = {
  * 工具（inject ['tools','fs']，无 subprocess/原生依赖），其 `view` 对目录经 ctx.fs.listDir 列目录 ——
  * 在 tool-fs-search 被禁用后这是唯一可用的列目录入口。`requireRow` 限定只加到已挂载该行的 preset。
  *
- * `fs-mutate`（dsh-plugin-fs-mutate）是本工程自研插件，由 collectPlugins() 从父工程 ../dsh-plugins
+ * `fs-mutate`（harmony-plugin-fs-mutate）是本工程专用插件，由 collectPlugins() 从本工程 plugins/
  * 物化到 dsh-dist/node_modules，故 name 为裸包名；它经围栏原语 ctx.fs.remove 补齐 delete / move。
  */
 const HARMONY_ENSURED_PRESET_ROWS = [
@@ -365,9 +366,9 @@ const HARMONY_ENSURED_PRESET_ROWS = [
   },
   {
     id: 'fs-mutate',
-    name: 'dsh-plugin-fs-mutate',
+    name: 'harmony-plugin-fs-mutate',
     requireRow: 'tool-fs',
-    reason: 'HarmonyOS: 经围栏原语 ctx.fs.remove 补齐 delete / move（纯 JS，父工程 dsh-plugins 物化）',
+    reason: 'HarmonyOS: 经围栏原语 ctx.fs.remove 补齐 delete / move（纯 JS，本工程 plugins 物化）',
   },
 ];
 
@@ -548,7 +549,7 @@ if (existsSync(profileSrc)) {
 // 9. 物化 dsh-market（插件市场）到 dsh-dist/node_modules/dshmarket
 collectDshMarket();
 
-// 10. 物化父工程 dsh-plugins/ 下的自研插件（dsh-plugin-*）到 dsh-dist/node_modules/<包名>。
+// 10. 物化本工程 plugins/ 下的专用插件（harmony-plugin-*）到 dsh-dist/node_modules/<包名>。
 //     刻意放在最后：此前所有清理动作（.pnpm 删除、非目标架构 prebuilds 剪裁）都已跑完，
 //     插件目录落在 dsh-dist.tar.gz 内，不经过 resfile/app 的 demo 清理，故无需 keep 白名单。
 collectPlugins();

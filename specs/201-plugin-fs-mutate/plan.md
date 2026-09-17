@@ -55,9 +55,12 @@
 
 **不改**：preset 行 `id: fs-mutate`（行 id 是稳定身份，改它无收益且会与设备上已成型的 preset 产生无谓差异）。
 
-**连带文案**（非功能性，但属"零残留"要求）：
-- `lib/index.js` 的 `@module` 名与 `:42` 的 `throw new Error('... : maxTransferBytes must be ...')` 文案前缀；
-- `plugins/harmony-plugin-fs-mutate/README.md` / `README_zh.md` 的标题与 `- name:` 配置示例；
+**连带文案**（非功能性，但属"零残留"要求；令牌合计 12 处）：
+- `lib/index.js` 3 处：`@module` 名、`export const name`、`throw new Error('... : maxTransferBytes must be ...')` 文案前缀；
+- `lib/sandbox.js` 2 处：`@module` 名、`throw new Error('... : the mounted filesystem confines but ctx.sandboxPolicy is missing')` 文案前缀；
+- `lib/delete.js` / `lib/move.js` 各 1 处：`@module` 名；
+- `package.json` 1 处：`name`；
+- `plugins/harmony-plugin-fs-mutate/README.md` / `README_zh.md` 各 2 处：标题与 `- name:` 配置示例；
 - `collect-dsh.mjs` 的断言正则 `/^harmony-plugin-[A-Za-z0-9._-]+$/`、日志与报错文案、函数头注释；
 - `src-main/main.js` 的 `ensureDshPluginsProfileLink()` 通配 `startsWith('harmony-plugin-')` 与注释；
 - 两端 `README.md` / `README_zh.md` 的插件约定章节。
@@ -69,10 +72,10 @@
 | # | 路径 | 动作 | 要点 |
 |---|---|---|---|
 | 1 | `plugins/harmony-plugin-fs-mutate/package.json` | 新增（移动） | `name` 改新名；其余字段（`private`/`type`/`main`/`exports`/`files`/`peerDependencies`）不变 |
-| 2 | `plugins/harmony-plugin-fs-mutate/lib/index.js` | 新增（移动+改） | 改 `@module`、`export const name`、错误文案前缀 |
-| 3 | `plugins/harmony-plugin-fs-mutate/lib/sandbox.js` | 新增（**纯移动**） | 内容不变（md5 需一致） |
-| 4 | `plugins/harmony-plugin-fs-mutate/lib/delete.js` | 新增（**纯移动**） | 内容不变（md5 需一致） |
-| 5 | `plugins/harmony-plugin-fs-mutate/lib/move.js` | 新增（**纯移动**） | 内容不变（md5 需一致） |
+| 2 | `plugins/harmony-plugin-fs-mutate/lib/index.js` | 新增（移动+改） | 改 `@module`、`export const name`、错误文案前缀（3 行） |
+| 3 | `plugins/harmony-plugin-fs-mutate/lib/sandbox.js` | 新增（移动+改） | 仅改 `@module` 与错误文案前缀（2 行） |
+| 4 | `plugins/harmony-plugin-fs-mutate/lib/delete.js` | 新增（移动+改） | 仅改 `@module`（1 行） |
+| 5 | `plugins/harmony-plugin-fs-mutate/lib/move.js` | 新增（移动+改） | 仅改 `@module`（1 行） |
 | 6 | `plugins/harmony-plugin-fs-mutate/README.md` | 新增（移动+改） | 标题与配置示例改新名；Known Limitations 等正文不变 |
 | 7 | `plugins/harmony-plugin-fs-mutate/README_zh.md` | 新增（移动+改） | 同 #6，中文镜像 |
 | 8 | `plugins/README.md` | **新增** | 本工程专用插件目录约定（见 §4.4） |
@@ -168,7 +171,7 @@
 | R1 | 5 个身份落点漏改一处 | 会话无法创建（`agent-preset/invalid`） | 改完对两处 `HARMONY_ENSURED_PRESET_ROWS` 做双文件 `grep` 对照；再在**设备端**直接读实际 preset `agent.cordis.yml` 断言新名（构建期 + 运行期双重验证），而非只信源码 |
 | R2 | 设备旧 `dsh-dist` 未删，旧行被保留 | 旧行不可解析 → 会话创建失败 | 测试流程显式删除 `$DSH_HOME/dsh-dist`；AC-6/AC-9 覆盖 |
 | R3 | 旧名副本残留于 `profiles/node_modules` | 若有旧行仍可解析，则静默加载过期插件 | FR-4 陈旧清理 + AC-8 |
-| R4 | 插件源码在移动中损坏 | 行为变更（违反 FR-6） | `lib/{sandbox,delete,move}.js` 迁移前后 **md5 对比**（AC-13）；`lib/index.js` 只允许改名相关差异（`git diff` 逐行确认） |
+| R4 | 插件源码在移动中损坏 | 行为变更（违反 FR-6） | `diff -r` 旧目录 vs 新目录，断言**差异行数 == 名字令牌数（12）**且每行都是纯令牌替换（AC-13）。这比 md5 更强：md5 只能证明"没动"，diff 能同时证明"动的都是名字" |
 | R5 | `collectPlugins()` 源根改错，导致收集静默无操作 | 产物缺插件 → 运行期 preset 不可解析 | `collect-dsh` 后断言 `dsh-dist/node_modules/harmony-plugin-fs-mutate/package.json` **存在**（AC-5）——不能只看"脚本没报错" |
 | R6 | 断言正则改宽（如误留 `dsh-plugin-`） | 命名约定失守 | AC-4 + §4.2 逐项清单 |
 | R7 | 父工程 submodule 指针被误提交 | 父工程指向未预期的 harmony 提交 | 默认**不提交**指针；`git add` 显式列文件，不用 `git add -A` |
@@ -198,6 +201,7 @@
 | D6 | `plugins/README.md` 与 `dsh-plugins/README.md` **中文单文件** | 中英双语对 | 受众为本团队，与 `specs/` 及脚本注释口径一致；避免为一段目录说明维护两份镜像 |
 | D7 | 不扩展 `collectPlugins()` 做旧名清理 | 扩展 | `collect-dsh.mjs` 已在开头清空整个 `dsh-dist`，扩展即死代码（YAGNI） |
 | D8 | 不出 `tasks.md` | 出 | 本次为约 19 个机械改动的迁移，`plan.md` §4 的逐文件清单已可逐条勾选；额外任务文档属仪式 |
+| D9 | 「纯移动」判据由**逐字节不变**放宽为**仅名字令牌行不同**，并连改 4 处源码名字令牌（`sandbox.js`×2、`delete.js`×1、`move.js`×1） | 保留旧名以维持字节不变 | 开发阶段实测证伪：`lib/sandbox.js:77` 抛错文案与 3 个 `@module` 标签内嵌包名，与原判据不可兼得。**FR-1.2 零残留优先**——留旧名会让抛错文案指向一个已不存在的包。判据改为「差异行数 == 令牌数」，仍**等价**保证行为零变更 |
 
 ## 10. 待确认
 

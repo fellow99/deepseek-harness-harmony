@@ -187,7 +187,7 @@ const HARMONY_DISABLED_PRESET_ROWS = {
  * `requireRow` 限定只加到已挂载该行的 preset 上：standard / ptc / cordis 有 `tool-fs`；
  * `minimal` 是固定的双工具训练配置，不追加。
  *
- * `fs-mutate`（dsh-plugin-fs-mutate）是本工程自研插件，由父工程 ../dsh-plugins 经 collect-dsh.mjs
+ * `fs-mutate`（harmony-plugin-fs-mutate）是本工程专用插件，由本工程 plugins/ 经 collect-dsh.mjs
  * 的 collectPlugins() 物化到 dsh-dist/node_modules，故 name 用裸包名；它经围栏原语 ctx.fs.remove
  * 补齐 delete / move —— 上游 tool-fs 只有读写，删除/移动此前在鸿蒙侧没有入口。
  * 本表与 collect-dsh.mjs 的 HARMONY_ENSURED_PRESET_ROWS 逐条镜像，改动需同时改两处。
@@ -201,9 +201,9 @@ const HARMONY_ENSURED_PRESET_ROWS = [
   },
   {
     id: 'fs-mutate',
-    name: 'dsh-plugin-fs-mutate',
+    name: 'harmony-plugin-fs-mutate',
     requireRow: 'tool-fs',
-    reason: 'HarmonyOS: 经围栏原语 ctx.fs.remove 补齐 delete / move（纯 JS，父工程 dsh-plugins 物化）',
+    reason: 'HarmonyOS: 经围栏原语 ctx.fs.remove 补齐 delete / move（纯 JS，本工程 plugins 物化）',
   },
 ];
 
@@ -360,30 +360,39 @@ function ensureDshMarketProfileLink(home) {
 }
 
 /**
- * 将本工程自研插件（dsh-dist/node_modules/dsh-plugin-*）复制到 $DSH_HOME/profiles/node_modules/。
+ * 将本工程专用插件（dsh-dist/node_modules/harmony-plugin-*）复制到 $DSH_HOME/profiles/node_modules/。
  *
  * 必要性：agent preset 行的可解析性由 dsh-agent-presets 的 discovery 判定 —— 对**裸包名**，它从
  * `ctx.baseUrl`（即本 profile 目录 `$DSH_HOME/profiles/desktop`）向上走 `node_modules` 找
  * `<pkg>/package.json`（`packageInstalled()`）。profile 目录下只有 dsh-dist 那套 `@deepseek-ai/*`
  * 依赖闭包与 dshmarket，因此 **scoped 行能解析、而只存在于 `dsh-dist/node_modules` 的裸名
- * `dsh-plugin-*` 会被判定为 "cannot be resolved"** → 整份 preset 变 broken →
+ * `harmony-plugin-*` 会被判定为 "cannot be resolved"** → 整份 preset 变 broken →
  * `session.create` 报 `agent-preset/invalid`（表现为「新建会话」与「发消息」一起失效）。
  * 与 dshmarket 同法：**复制而非 symlink** —— 鸿蒙沙箱禁止 symlink（EACCES）。
  *
- * 与 dshmarket 的差异：本函数**每次启动都覆盖复制**。dshmarket 采用「已存在即跳过」，但自研插件的内容
+ * 与 dshmarket 的差异：本函数**每次启动都覆盖复制**。dshmarket 采用「已存在即跳过」，但专用插件的内容
  * 随 HAP 迭代，跳过会让 profile 侧 pin 住旧版本（复制进 dsh-dist 的 package.json 已出现过落后于源的情况）。
  * 插件是纯 JS、体量数 KB，覆盖成本可忽略。
+ *
+ * 末尾附带**同族陈旧目录清理**：`profiles/node_modules` 下匹配 `dsh-plugin-*` / `harmony-plugin-*`
+ * 但不在本次源集合中的目录会被移除，使 profile 侧忠实镜像 dsh-dist 侧，并消除「旧包残留 + 旧 preset 行
+ * 仍能解析 → 静默加载过期插件」这一最难排查的状态（改名类变更必然产生此类残留）。
+ * 清理失败**不中断启动**：该目录已无引用者，属卫生动作，不值得把可用的应用变成起不来的应用。
  */
 function ensureDshPluginsProfileLink(home) {
+  const destRoot = join(home, 'profiles', 'node_modules');
+  // 覆盖改名前后两代的命名，用于识别「同族」目录。
+  const isPluginName = (n) => n.startsWith('dsh-plugin-') || n.startsWith('harmony-plugin-');
   let names;
   try {
-    names = readdirSync(join(DSH_ROOT, 'node_modules')).filter((n) => n.startsWith('dsh-plugin-'));
+    names = readdirSync(join(DSH_ROOT, 'node_modules')).filter((n) => n.startsWith('harmony-plugin-'));
   } catch (err) {
-    console.error('[dsh-harmony] 读取 dsh-dist/node_modules 失败，自研插件未物化:', err.message);
+    console.error('[dsh-harmony] 读取 dsh-dist/node_modules 失败，专用插件未物化:', err.message);
     return;
   }
+  // 源集合为空即返回，含"不清理"：此时无法区分「确实没有插件」与「dsh-dist 尚未就绪」，
+  // 保守起见不做删除（残留目录无引用者，无害）。
   if (names.length === 0) return;
-  const destRoot = join(home, 'profiles', 'node_modules');
   for (const name of names) {
     const src = join(DSH_ROOT, 'node_modules', name);
     if (!existsSync(join(src, 'package.json'))) continue;
@@ -398,6 +407,18 @@ function ensureDshPluginsProfileLink(home) {
       // 复制失败 ⇒ preset 行不可解析 ⇒ 会话无法创建，必须响亮（不能沿用 dshmarket 的「不阻塞」）。
       console.error('[dsh-harmony] ' + name + ' 复制失败，agent preset 将不可用:', err.message);
     }
+  }
+  // 陈旧清理：源集合之外的同族目录一律移除（改名、删插件后必然产生）。
+  if (!existsSync(destRoot)) return;
+  try {
+    const keep = new Set(names);
+    for (const entry of readdirSync(destRoot)) {
+      if (!isPluginName(entry) || keep.has(entry)) continue;
+      rmSync(join(destRoot, entry), { recursive: true, force: true });
+      console.log('[dsh-harmony] 已清理陈旧插件目录', entry, '← profiles/node_modules');
+    }
+  } catch (err) {
+    console.warn('[dsh-harmony] 清理陈旧插件目录失败（不影响启动）:', err.message);
   }
 }
 
