@@ -50,7 +50,7 @@ This project wraps the dsh Web UI in a native HarmonyOS desktop shell (Electron-
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-Key point: **the renderer loads same-origin — zero CORS, zero auth, zero custom protocol, zero IPC carrier** — reusing dsh's existing `WebApiClient` (HTTP uplink + WebSocket downlink), **zero upstream changes** (only 9 patches).
+Key point: **the renderer loads same-origin — zero CORS, zero auth, zero custom protocol, zero IPC carrier** — reusing dsh's existing `WebApiClient` (HTTP uplink + WebSocket downlink), **zero upstream changes** (only 13 patches).
 
 **Differences from desktop** (HarmonyOS-specific adaptations, see `docs/工程规划.md` §18):
 
@@ -93,9 +93,9 @@ Key point: **the renderer loads same-origin — zero CORS, zero auth, zero custo
 - **Same-origin data plane**: the renderer does `loadURL(http://<LAN IP>:<port>/)` to load the dsh Web UI same-origin, reusing `WebApiClient` — zero CORS, zero auth, zero new carrier.
 - **desktop profile**: `profiles/desktop/` (`dsh.profile.bundles = [dsh-base, dsh-web-app, dshmarket]`, cordis.patch.yml overriding `web-runtime.printUrl: false`, `webserver.host: 0.0.0.0`), copied to `$DSH_HOME/profiles/desktop` at runtime.
 
-### Build process (four stages + 9 patches)
+### Build process (four stages + 13 patches)
 
-dsh depends on Node internal APIs (HMR, native directory dialog) and conflicts with the HarmonyOS sandbox (symlink, loopback isolation), so 9 patches must be applied first (idempotent — `--reverse --check` detects already-applied and skips):
+dsh depends on Node internal APIs (HMR, native directory dialog) and conflicts with the HarmonyOS sandbox (symlink, loopback isolation), so 13 patches must be applied first (idempotent — `--reverse --check` detects already-applied and skips):
 
 The pipeline is **four stages** (⓪–③), followed by the local build + signing step (④). Stage ⓪ is the runtime sync: it force-copies the upstream runtime **and re-applies this app's own customizations** (prune + overlay), so it must always be the first thing that runs.
 
@@ -104,7 +104,7 @@ The pipeline is **four stages** (⓪–③), followed by the local build + signi
 #    modules + 3 SOs + libc++_shared.so, prune unwanted upstream files, then overlay runtime-overlays/
 node scripts/collect-runtime.mjs
 
-# ① build dsh: clean workspace residue → apply 9 patches → pnpm build host/client/web → build ../dsh-market
+# ① build dsh: clean workspace residue → apply 13 patches → pnpm build host/client/web → build ../dsh-market
 node scripts/build-dsh.mjs
 
 # ② collect dsh artifacts: pnpm deploy materialize → fill packages → sharp stub → better-sqlite3 injection → web dist + profile + dshmarket + plugins
@@ -217,6 +217,10 @@ Mode selection is driven by the **`SIGN_MODE`** environment variable (`debug` | 
 | `patches/dsh-v0.1.5-rc.2/dsh-fs-hardlink-fallback.patch` | Also refuses hard links on hmdfs user-directory mounts (`EPERM`, no `.link` handler) → `writeFileAtomic`'s guarded-create path falls back to a same-directory `rename` when the target is verified absent, instead of failing the create with `FS_IO_ERROR`. Scoped to `fs-local`; the link preference is unchanged wherever links work |
 | `patches/dsh-v0.1.5-rc.2/dsh-fs-remove-primitive.patch` | Adds the `ctx.fs` seam's missing `remove` mutation primitive so a file tool can delete through the same sandbox fence as write/edit: a **non-abstract** `FileSystem.remove` whose default body throws (an abstract member would fail compilation for the six concrete `extends FileSystem` classes), a `fs-local` implementation in its own `remove.ts`, and a `fs-sandbox` override that runs `checkedTarget` first |
 | `patches/dsh-v0.1.5-rc.2/dsh-disable-lefthook-postinstall.patch` | Drops dsh's root `postinstall` (the lefthook git-hook installer). It refuses any checkout whose common git config carries `core.worktree` — true of every submodule checkout — so `collect-dsh`'s `pnpm deploy` aborted with `ELIFECYCLE`. Git hooks are irrelevant to a shipped HAP, and the installer never succeeded here (`dsh-hooks/` is absent) |
+| `patches/dsh-v0.1.5-rc.2/dsh-fs-write-bytes.patch` | Adds the `ctx.fs` seam's missing `writeBytes` mutation so a file tool can publish raw bytes behind the same sandbox fence as `writeText`: a **non-abstract** `FileSystem.writeBytes` whose default body throws, a `fs-local` implementation reusing the atomic-write path undecoded, and a `fs-sandbox` override that runs `checkedTarget` first |
+| `patches/dsh-v0.1.5-rc.2/dsh-fs-chmod-primitive.patch` | Adds the `ctx.fs` seam's missing `chmod` mutation: a **non-abstract** `FileSystem.chmod` whose default body throws, a `fs-local` implementation (`chmod.ts`) that applies the bits and **reads them back**, failing when the storage layer accepted the call without applying the mode (the HarmonyOS `hmdfs` user mounts do), and a `fs-sandbox` override that runs `checkedTarget` first |
+| `patches/dsh-v0.1.5-rc.2/dsh-extra-writable-roots.patch` | Teaches `writableRoots()` to honour `DSH_EXTRA_WRITABLE_ROOTS` (a `path.delimiter`-separated list) as deployment state, so a product can grant the user's Desktop/Documents/Download directories once at startup instead of leaving every write inside them to a per-operation escalation |
+| `patches/dsh-v0.1.5-rc.2/dsh-attachment-durable-walk-sandbox.patch` | The attachment store fsyncs every ancestor directory up to the filesystem root, but the HarmonyOS sandbox denies `open()` on `/`, `/data`, `/data/storage` and `/data/storage/el2`. `syncDirectory()` now ends its participation at the first directory the platform refuses to open — matching the existing Windows early return — instead of failing the save |
 
 **Prerequisite — sibling source checkouts.** This project consumes 3 sibling projects (not submodules); clone them next to this project before building:
 
@@ -516,7 +520,7 @@ This project and the 3 consumed projects plus 1 architecture-reference project l
 │   ├── scripts/                   # Four-stage build: collect-runtime → build-dsh → collect-dsh, plus build-debug / build-release
 │   ├── runtime-overlays/          # App customizations re-applied after every runtime copy (prune + overlay)
 │   ├── profiles/desktop/          # Custom desktop profile (cordis.patch.yml + package.json)
-│   ├── patches/                   # dsh upstream patches (6)
+│   ├── patches/                   # dsh upstream patches (13)
 │   ├── docs/                      # Engineering plan and final implementation record
 │   ├── plugins/                   # This project's own plugins (harmony-plugin-XXX; baked into the HAP, all loaded by default)
 │   ├── skills/                    # This project's own tool skills (kebab-case, no prefix; shipped in the HAP as the bundled skill root)

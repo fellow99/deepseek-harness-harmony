@@ -50,7 +50,7 @@ dsh 已完成 **Host/Client 分层**，其 webserver **同时服务 SPA dist 与
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-关键点：**渲染进程同源加载——零 CORS、零鉴权、零自定义协议、零 IPC 载体**——复用 dsh 现有 `WebApiClient`（HTTP 上行 + WebSocket 下行），**对 dsh 零上游改动**（仅 9 个 patch）。
+关键点：**渲染进程同源加载——零 CORS、零鉴权、零自定义协议、零 IPC 载体**——复用 dsh 现有 `WebApiClient`（HTTP 上行 + WebSocket 下行），**对 dsh 零上游改动**（仅 13 个 patch）。
 
 **与 desktop 的差异**（鸿蒙独有适配，详见 `docs/工程规划.md` §18）：
 
@@ -93,9 +93,9 @@ dsh 已完成 **Host/Client 分层**，其 webserver **同时服务 SPA dist 与
 - **同源数据面**：渲染进程 `loadURL(http://<局域网 IP>:<port>/)` 同源加载 dsh Web UI，复用 `WebApiClient`——零 CORS、零鉴权、零新载体。
 - **desktop profile**：`profiles/desktop/`（`dsh.profile.bundles = [dsh-base, dsh-web-app, dshmarket]`，cordis.patch.yml 覆盖 `web-runtime.printUrl: false`、`webserver.host: 0.0.0.0`），运行时复制到 `$DSH_HOME/profiles/desktop`。
 
-### 构建流程（四阶段 + 9 个 patch）
+### 构建流程（四阶段 + 13 个 patch）
 
-dsh 依赖的 Node 内建 API（HMR、原生目录对话框）与鸿蒙沙箱（symlink、loopback 隔离）冲突，需先应用 9 个 patch（幂等——`--reverse --check` 检测已应用则跳过）：
+dsh 依赖的 Node 内建 API（HMR、原生目录对话框）与鸿蒙沙箱（symlink、loopback 隔离）冲突，需先应用 13 个 patch（幂等——`--reverse --check` 检测已应用则跳过）：
 
 流水线共 **四阶段**（⓪–③），之后是本机构建 + 签名步骤（④）。阶段 ⓪ 是运行时同步：它强制覆盖上游运行时，**并重新施加本工程自己的定制**（prune + overlay），因此必须始终第一个运行。
 
@@ -104,7 +104,7 @@ dsh 依赖的 Node 内建 API（HMR、原生目录对话框）与鸿蒙沙箱（
 #    模块 + 3 个 SO + libc++_shared.so，prune 不需要的上游文件，再 overlay 回盖 runtime-overlays/
 node scripts/collect-runtime.mjs
 
-# ① 构建 dsh：清理 workspace 残留 → apply 6 patch → pnpm build host/client/web → build ../dsh-market
+# ① 构建 dsh：清理 workspace 残留 → apply 13 patch → pnpm build host/client/web → build ../dsh-market
 node scripts/build-dsh.mjs
 
 # ② 收集 dsh 产物：pnpm deploy 物化 → 补包 → sharp stub → better-sqlite3 注入 → web dist + profile + dshmarket + plugins
@@ -217,6 +217,10 @@ tar -czf web_engine/src/main/resources/resfile/resources/app/dsh-dist.tar.gz --f
 | `patches/dsh-v0.1.5-rc.2/dsh-fs-hardlink-fallback.patch` | hmdfs 用户目录挂载同样禁硬链接（`EPERM`，目录 inode 无 `.link` 处理器）→ `writeFileAtomic` 的守卫式新建在**已确认目标不存在**时回退为同目录 `rename`，不再以 `FS_IO_ERROR` 直接失败。仅作用于 `fs-local`；硬链接可用之处仍保持 link 优先 |
 | `patches/dsh-v0.1.5-rc.2/dsh-fs-remove-primitive.patch` | 给 `ctx.fs` seam 补上缺失的 `remove` 变更原语，使文件工具能经与 write/edit **同一道沙箱围栏**删除：`FileSystem.remove` 为**非抽象**、默认体抛错的实现（若设为 abstract，6 个 `extends FileSystem` 的具体类会编译失败）、`fs-local` 在独立 `remove.ts` 中实现、`fs-sandbox` 覆写先过 `checkedTarget` |
 | `patches/dsh-v0.1.5-rc.2/dsh-disable-lefthook-postinstall.patch` | 移除 dsh 根 `postinstall`（lefthook git 钩子安装器）。它拒绝任何共享 git 配置含 `core.worktree` 的检出——而 **submodule 检出必然如此**——导致 `collect-dsh` 内的 `pnpm deploy` 以 `ELIFECYCLE` 失败。git 钩子对 HAP 产物毫无意义，且该安装器在本检出中从未成功过（`dsh-hooks/` 不存在） |
+| `patches/dsh-v0.1.5-rc.2/dsh-fs-write-bytes.patch` | 给 `ctx.fs` seam 补上缺失的 `writeBytes` 变更原语，使文件工具能经与 `writeText` 相同的沙箱围栏发布原始字节：**非抽象**的 `FileSystem.writeBytes`（默认体抛错）、`fs-local` 沿原子写路径不做解码地实现、`fs-sandbox` 覆写先走 `checkedTarget` |
+| `patches/dsh-v0.1.5-rc.2/dsh-fs-chmod-primitive.patch` | 给 `ctx.fs` seam 补上缺失的 `chmod` 变更原语：**非抽象**的 `FileSystem.chmod`（默认体抛错）、`fs-local` 实现（`chmod.ts`）在应用权限位后**回读校验**、当存储层「接受调用但不落实模式」时报错（鸿蒙 `hmdfs` 用户挂载即如此）、`fs-sandbox` 覆写先走 `checkedTarget` |
+| `patches/dsh-v0.1.5-rc.2/dsh-extra-writable-roots.patch` | 让 `writableRoots()` 把 `DSH_EXTRA_WRITABLE_ROOTS`（`path.delimiter` 分隔）当作部署期状态一并纳入可写根，使产品能在启动时一次性授予用户的 Desktop / Documents / Download 目录，而不必让其中每次写入都过一次提权审批 |
+| `patches/dsh-v0.1.5-rc.2/dsh-attachment-durable-walk-sandbox.patch` | 附件存储会逐级 fsync 直到文件系统根，但鸿蒙沙箱拒绝 `open()` `/`、`/data`、`/data/storage`、`/data/storage/el2`。`syncDirectory()` 改为在平台拒绝打开的第一级就结束本层参与（与既有的 Windows 早退同模式），而不是让保存失败 |
 
 **前置——同级工程 checkout**：本工程消费 3 个同级工程（非 submodule），构建前需放到同级目录：
 
@@ -479,7 +483,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1   # -Task App
 │   ├── scripts/                   # 四阶段构建：collect-runtime → build-dsh → collect-dsh，外加 build-debug / build-release
 │   ├── runtime-overlays/          # 每次运行时 copy 后重新施加的应用定制（prune + overlay）
 │   ├── profiles/desktop/          # 自定义 desktop profile（cordis.patch.yml + package.json）
-│   ├── patches/                   # dsh 上游 patch（6 个）
+│   ├── patches/                   # dsh 上游 patch（13 个）
 │   ├── docs/                      # 工程规划与最终实现记录
 │   ├── plugins/                   # 本工程专用插件（harmony-plugin-XXX；编译期打入 HAP，运行期全部默认加载）
 │   ├── skills/                    # 本工程专用工具技能（功能性 kebab-case、无前缀；随 HAP 分发，作为 bundled 技能根提供）

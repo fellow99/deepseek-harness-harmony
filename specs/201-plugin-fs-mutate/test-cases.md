@@ -163,6 +163,29 @@
 | 证据 | 配置值输出 |
 | 优先级 | 低（改名不影响 `config` 传递路径，本项为防御性） |
 
+### TC-D7 —— `copy` 工具真实复制文件与目录
+
+| 项 | 内容 |
+|---|---|
+| 目的 | 验证 `copy`（受围栏复制、无删除）在设备上生效，且**二进制按字节保真**，并遵守**不覆盖**契约（AC-14） |
+| 前置 | TC-D5 通过 |
+| 步骤 | 1. CDP 在工作区创建 `.../aaa/r3/src.bin`（10 字节，含 `0x00`/`0xFF`/`0xFE`/`0x80`）、目录树 `.../aaa/r3/tree/{inner.txt,deep/deeper.txt}`、以及一个**已存在**的 `.../aaa/r3/existing.bin`；记下 `src.bin` 与 `existing.bin` 的 sha256<br>2. 发消息：用 `copy` 把 `src.bin` 复制为 `copied.bin`；用 `copy` 把 `tree` 递归复制为 `tree_out`（`recursive: true`）；再用 `copy` 把 `src.bin` 复制到**已存在的** `existing.bin`<br>3. 读对话 + 读文件系统 |
+| 期望 | 前两次返回 `Copied "<from>" to "<to>".` 与 `Copied directory "…" to "…" (N files).`；`copied.bin` 的 sha256 **等于** `src.bin`（证明按字节复制）；`tree_out/inner.txt` 与 `tree_out/deep/deeper.txt` 存在且内容一致（证明递归）；第三次**失败**且 `existing.bin` 的内容 sha256 **未被改写**（不覆盖契约成立） |
+| 证据 | 对话片段 + 三处 sha256/内容 + 存在性 |
+| 失败含义 | `copy` 未注册、`ctx.fs.writeBytes` 缺失（补丁未进产物），或复用 `move` 规划器时引入了行为偏差 |
+
+### TC-D8 —— `chmod` 在两种文件系统上的行为差异
+
+| 项 | 内容 |
+|---|---|
+| 目的 | 验证 `chmod` 在工作区（`hmfs`）**真实落实**、在用户目录（`hmdfs`）**如实报错**而非静默成功（AC-15） |
+| 前置 | TC-D7 通过 |
+| 步骤 | 1. 用 `chmod` 把 `.../aaa/r3/copied.bin` 设为 `"640"`<br>2. 用 `chmod` 把 `/storage/Users/currentUser/Documents/<某文件>` 设为 `"640"`<br>3. CDP 读两处的实际 `mode & 0o7777` |
+| 期望 | 第 1 次返回 `Set mode 0640 on "<path>".`，且实际模式读回为 `640`；第 2 次**失败**，错误文本含 `the filesystem kept mode <实际> instead of 640`，且该文件实际模式**未变** |
+| 证据 | 对话片段 + 两处模式读回值 |
+| 失败含义 | `ctx.fs.chmod` 未进产物（`dsh-fs-chmod-primitive.patch` 失效）；若第 2 次**报成功**，则回读校验被绕过——那会把 `hmdfs` 的静默忽略伪装成成功，是本用例要拦的主要回归 |
+| 补充 | 第 2 次返回的「失败」是**正确行为**、不是缺陷：`hmdfs` 接受 `chmod` 调用但不落实权限位。该行为已由设备探针独立证实，并记入能力清单 D 节 |
+
 ---
 
 ## 3. 回归用例
@@ -212,5 +235,7 @@
 | AC-9 新建会话成功 | TC-D3 |
 | AC-10 `delete`/`move` 真实生效 | TC-D4, TC-D5 |
 | AC-11 既有能力不退化 | TC-R1, TC-R2, TC-R3 |
+| AC-14 `copy` 真实生效、二进制保真、不覆盖 | TC-D7 |
+| AC-15 `chmod` 工作区落实 / 用户目录如实报错 | TC-D8 |
 | AC-12 文档就位 | 人工阅读（spec/plan 已列清单） |
 | AC-13 源码差异仅限 12 行包名令牌 | TC-B5 |
