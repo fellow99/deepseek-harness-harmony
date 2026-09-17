@@ -10,7 +10,7 @@
 'use strict';
 const { app, BrowserWindow, Menu, screen } = require('electron');
 const {
-  cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync,
+  cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync,
   writeSync, openSync, closeSync, createReadStream,
 } = require('node:fs');
 const { createGunzip } = require('node:zlib');
@@ -360,6 +360,48 @@ function ensureDshMarketProfileLink(home) {
 }
 
 /**
+ * 将本工程自研插件（dsh-dist/node_modules/dsh-plugin-*）复制到 $DSH_HOME/profiles/node_modules/。
+ *
+ * 必要性：agent preset 行的可解析性由 dsh-agent-presets 的 discovery 判定 —— 对**裸包名**，它从
+ * `ctx.baseUrl`（即本 profile 目录 `$DSH_HOME/profiles/desktop`）向上走 `node_modules` 找
+ * `<pkg>/package.json`（`packageInstalled()`）。profile 目录下只有 dsh-dist 那套 `@deepseek-ai/*`
+ * 依赖闭包与 dshmarket，因此 **scoped 行能解析、而只存在于 `dsh-dist/node_modules` 的裸名
+ * `dsh-plugin-*` 会被判定为 "cannot be resolved"** → 整份 preset 变 broken →
+ * `session.create` 报 `agent-preset/invalid`（表现为「新建会话」与「发消息」一起失效）。
+ * 与 dshmarket 同法：**复制而非 symlink** —— 鸿蒙沙箱禁止 symlink（EACCES）。
+ *
+ * 与 dshmarket 的差异：本函数**每次启动都覆盖复制**。dshmarket 采用「已存在即跳过」，但自研插件的内容
+ * 随 HAP 迭代，跳过会让 profile 侧 pin 住旧版本（复制进 dsh-dist 的 package.json 已出现过落后于源的情况）。
+ * 插件是纯 JS、体量数 KB，覆盖成本可忽略。
+ */
+function ensureDshPluginsProfileLink(home) {
+  let names;
+  try {
+    names = readdirSync(join(DSH_ROOT, 'node_modules')).filter((n) => n.startsWith('dsh-plugin-'));
+  } catch (err) {
+    console.error('[dsh-harmony] 读取 dsh-dist/node_modules 失败，自研插件未物化:', err.message);
+    return;
+  }
+  if (names.length === 0) return;
+  const destRoot = join(home, 'profiles', 'node_modules');
+  for (const name of names) {
+    const src = join(DSH_ROOT, 'node_modules', name);
+    if (!existsSync(join(src, 'package.json'))) continue;
+    const dest = join(destRoot, name);
+    try {
+      mkdirSync(destRoot, { recursive: true });
+      // 先删后拷：`force` 只覆盖同名文件，源里删掉的文件会留在目标，导致目标与源不一致。
+      rmSync(dest, { recursive: true, force: true });
+      cpSync(src, dest, { recursive: true, force: true, dereference: true });
+      console.log('[dsh-harmony] 已复制', name, '→ profiles/node_modules');
+    } catch (err) {
+      // 复制失败 ⇒ preset 行不可解析 ⇒ 会话无法创建，必须响亮（不能沿用 dshmarket 的「不阻塞」）。
+      console.error('[dsh-harmony] ' + name + ' 复制失败，agent preset 将不可用:', err.message);
+    }
+  }
+}
+
+/**
  * 选择一个渲染进程可访问的 host：优先局域网 IPv4，其次 127.0.0.1。
  * 鸿蒙 NEXT 下渲染进程访问 loopback 可能被网络隔离，故用局域网 IP。
  */
@@ -390,6 +432,7 @@ async function startHost() {
   console.log('[dsh-harmony] DSH_HOME =', process.env.DSH_HOME);
   ensureDesktopProfile(process.env.DSH_HOME);
   ensureDshMarketProfileLink(process.env.DSH_HOME);
+  ensureDshPluginsProfileLink(process.env.DSH_HOME);
   process.env.DSH_DISABLE_HMR = '1';
   // 技能目录：故意放在 dsh-dist.tar.gz 之外（与 main.js 同目录），只换 HAP 即可更新技能。
   // 上游 skill-filesystem 读 DSH_BUNDLED_SKILL_DIR 作为 bundled default root（rank 600）；
