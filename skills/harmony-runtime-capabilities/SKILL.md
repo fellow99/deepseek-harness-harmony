@@ -32,12 +32,33 @@ run. Do not plan work that depends on them.
 - Use `web_search` / `web_fetch` for network access (read-only, GET only).
 - The working directory is known from context; you cannot discover it with `pwd`.
 
-## No delete, move, rename, or copy
+## Deleting and moving files
 
-The filesystem seam exposes only read / write / edit / list. There is no tool that can
-delete, move, rename, copy, or `chmod` a file, and no shell to fall back on. Anything you
-create stays until the user removes it. Avoid generating temporary files you cannot clean
-up, and prefer editing in place over write-then-rename strategies.
+Two file-mutation tools **are** available in this build:
+
+- `delete` — `paths` (required), `recursive?`. Removes each path independently; one failure
+  never stops the batch, and the result lists what was deleted plus the verbatim error for
+  every path that failed. A non-empty directory needs `recursive: true`.
+- `move` — `from` (required), `to` (required), `recursive?`. Copy-then-remove: the copy never
+  overwrites (an existing destination fails the move), and the source is removed only after the
+  copy succeeded. A directory needs `recursive: true`.
+
+Both go through the same sandbox fence as `write`/`edit`, so a path outside the workspace is
+denied on the first attempt and needs the escalation described below. Use them freely for
+temporary files instead of leaving clutter behind.
+
+Known limitations of `move` (all verified on device):
+
+- **Text files only.** The seam's `writeText` rejects binary content, so moving a binary source
+  fails with `FS_NOT_TEXT`. There is no binary-relocation path.
+- **An empty directory cannot be moved.** The seam exposes no directory-creation primitive, so a
+  tree that would contain an empty directory is refused up front rather than silently dropping it.
+- **A failed copy leaves a partial destination.** The source survives (it is removed only after a
+  successful copy), but files already written to the destination stay there — remove the
+  destination before retrying.
+
+`rename`, a standalone `copy`, and `chmod` remain **absent**: there is no tool for them and no
+shell to fall back on. Do not rely on write-then-rename strategies — use `move` to relocate a file.
 
 ## Creating files
 
@@ -76,7 +97,8 @@ Prefer keeping artifacts inside the workspace and telling the user where they ar
 | `skill`, `todo_write`, goals, subagents, workflows, `present` | available |
 | shell / `bash` / `pwsh` | absent |
 | `glob` / `grep` (content search) | absent |
-| delete / move / rename / copy | absent |
+| `delete` / `move` (file mutation) | **available** |
+| rename / standalone `copy` / `chmod` | absent |
 | background jobs started from a shell | absent |
 
 ## Related reading
