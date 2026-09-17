@@ -64,7 +64,7 @@ Key point: **the renderer loads same-origin — zero CORS, zero auth, zero custo
 - ✅ Session persistence / full-text search (better-sqlite3, Electron 37 / Node ABI v138 aarch64 artifact, injected by collect-dsh)
 - ✅ Plugin marketplace (dsh-market built-in)
 - ✅ Window state persistence (maximized / bounds restored) + F11 fullscreen toggle
-- ⚠️ Image attachment validation/thumbnails (sharp pure-JS stub, no-op)
+- ⚠️ Image attachments (sharp pure-JS stub: parses real metadata from the PNG/JPEG/GIF/WebP container headers, with no decoding, resizing or encoding. Already-clean 8-bit sRGB PNG/JPEG/WebP within the limits pass through unchanged and are accepted; anything needing conversion (GIF, animation, 16-bit PNG, ICC/EXIF/orientation) is refused with an explicit error. No thumbnails.)
 - ❌ Terminal (bash tool, node-pty has no aarch64 artifact)
 - ❌ Process sandbox (koffi / landlock)
 

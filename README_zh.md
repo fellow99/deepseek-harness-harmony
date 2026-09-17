@@ -64,7 +64,7 @@ dsh 已完成 **Host/Client 分层**，其 webserver **同时服务 SPA dist 与
 - ✅ 会话持久化 / 全文搜索（better-sqlite3，Electron 37 / Node ABI v138 aarch64 成品，由 collect-dsh 注入）
 - ✅ 插件市场（dsh-market 内置）
 - ✅ 窗口状态持久化（最大化/位置尺寸）+ F11 全屏
-- ⚠️ 图片附件校验/缩略图（sharp 纯 JS stub，no-op）
+- ⚠️ 图片附件（sharp 纯 JS stub：按 PNG/JPEG/GIF/WebP 容器头解析真实 metadata，不做解码/缩放/编码。限额内且本就干净的 8-bit sRGB PNG/JPEG/WebP 可原样通过并被接受；需转换的图片（GIF/动画、16-bit PNG、ICC/EXIF/orientation）仍明确报错。无缩略图。）
 - ❌ 终端（bash 工具，node-pty 无 aarch64 产物）
 - ❌ 进程沙箱（koffi / landlock）
 

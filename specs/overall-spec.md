@@ -44,7 +44,7 @@
 
 - FR-OV-009：系统 MUST 禁用依赖不可用原生模块（node-pty/koffi）的插件（subprocess/sandbox/bash-sandbox/permission），保证 Host 正常启动。
 - FR-OV-010：系统 MUST 禁用 agent preset 中依赖 shell/subprocess/pty 的工具行，保证会话创建（工作区关联）成功。
-- FR-OV-011：系统 MUST 以纯 JS stub 替代 sharp（图片校验变 no-op），保证附件路径可用。
+- FR-OV-011：系统 MUST 以纯 JS stub 替代 sharp（按容器头解析真实 metadata，限额内本就干净的 8-bit sRGB PNG/JPEG/WebP 可原样通过，需转换的图片明确报错），保证附件路径可用。
 - FR-OV-012：系统 MUST 注入 aarch64 兼容的 better-sqlite3，保证会话持久化与全文搜索可用。
 
 ### 3.5 构建与分发

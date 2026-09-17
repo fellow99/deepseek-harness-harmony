@@ -59,7 +59,7 @@
 |---|---|
 | Electron 37 / Node 22.17.0（弃 Electron 34 / Node 20.18.1） | dsh 依赖 `node:zlib.createZstdDecompress`（解压会话产物），Electron 34 的 Node 20.18.1 不具备；Electron 37 可用（§18.1） |
 | better-sqlite3（Node ABI v138）替代 `node:sqlite` | OpenHarmony aarch64 需原生 SQLite；`@deepseek-ai/dsh-sqlite` 兼容层统一加载 better-sqlite3 |
-| sharp → 纯 JS stub | libvips 在鸿蒙 aarch64 不可用，图片校验变 no-op |
+| sharp → 纯 JS stub | libvips 在鸿蒙 aarch64 不可用；stub 按容器头解析真实 metadata（不做解码/缩放/编码），限额内本就干净的 8-bit sRGB PNG/JPEG/WebP 可原样通过，需转换的图片明确报错 |
 | node-pty / koffi → 禁用 | win32-x64 二进制无法在 aarch64 加载（终端/沙箱取舍） |
 | dsh-dist 压缩为 dsh-dist.tar.gz | HAP 内 5 万+ 小文件导致 hvigor 打包超限；单文件压缩 + 运行时流式解压 |
 | webserver 绑 0.0.0.0 + 局域网 IP 加载 | 鸿蒙 NEXT 渲染进程访问 127.0.0.1 被 loopback 网络隔离 |

@@ -89,7 +89,7 @@
 | `collectWorkspacePackages()` | `() => void` | 补全 packages/vendor/apps 下所有 `@deepseek-ai` 包 |
 | `collectNonHoistedDeps()` | `() => void` | 物化非 hoisted 依赖到顶层 node_modules |
 | `pruneForeignPrebuilds(dir, depth)` | `(dir, depth=0) => void` | 删除非 `platform-arch` 的 prebuilds 子目录 |
-| `applySharpStub()` | `() => void` | 写 sharp 纯 JS stub 到 `dist/index.mjs`+`index.cjs` |
+| `applySharpStub()` | `() => void` | 读取 `scripts/lib/sharp-stub-body.js`，由 `scripts/lib/sharp-stub.mjs` 包装后写入 `dist/index.mjs`+`index.cjs`（body 文件缺失即终止） |
 | `patchAgentPresets()` | `() => void` | 禁用 preset 顶层工具行（`disabled: true` 注入） |
 | `injectBetterSqlite3()` | `() => void` | 解包并注入 better-sqlite3 v138 成品 |
 
@@ -115,7 +115,7 @@
 - **非 hoisted 依赖物化**（FR-005-012）：遍历 `.pnpm/<entry>/node_modules/`，一级为 scope（`@` 开头）则取 `scope/name`，否则取 `name`；`materialize` 去重后从嵌套路径复制到顶层 `node_modules`。
 - **workspace 残留清理**（FR-005-005）：遍历 `vendor/*` 与 `packages/*/*` 目录，`existsSync(package.json) || existsSync(src)` 为假即 `rmSync`。
 - **preset 工具行禁用**（FR-005-016）：逐行扫描 `agent.cordis.yml`，正则 `^- id: ([A-Za-z0-9_-]+)\s*$` 匹配顶层行（列 0，不动 group 内 4 空格缩进嵌套行）；收集后续 2 空格缩进块，若块内已有 `disabled:` 则改写，否则在 `name:` 行后插入 `  disabled: true # HarmonyOS: <reason>`。
-- **sharp stub**（FR-005-014）：写 `function sharp(_input,_options)` 返回 Proxy 可链式对象（`metadata`/`raw`/`toBuffer`/`toFile`/`stats`/`info` 均返回空值/占位），分别生成 ESM（`export default sharp`）与 CJS（`module.exports = sharp`）。
+- **sharp stub**（FR-005-014）：`scripts/lib/sharp-stub-body.js` 为 stub body，`scripts/lib/sharp-stub.mjs` 负责 ESM（`export default sharp`）与 CJS（`module.exports = sharp`）包装，构建期 `applySharpStub()` 与单测共用同一包装。`function sharp(_input,_options)` 返回可链式对象，其中 `metadata()` 解析 PNG/JPEG/GIF/WebP 容器头返回真实 `format`/`width`/`height`/`depth`/`space`/`hasAlpha`/`pages`（`exif`/`icc`/`xmp`/`iptc`/`comments`/`orientation` 仅在字节确实携带时给出；无法识别或截断的字节不返回 `format` 且不抛异常），`raw`/`toBuffer`/`toFile`/`stats`/`info` 仍为空值/占位（不做解码/缩放/编码）。
 
 ### 6.3 错误处理
 
