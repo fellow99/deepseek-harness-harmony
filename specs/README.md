@@ -4,7 +4,7 @@
 **版本：** N/A
 **技术栈：** Electron-on-鸿蒙（Electron 37 / Node 22.17.0）+ ArkTS + HarmonyOS（封装 deepseek-harness）
 **文档生成时间：** 2026-09-04
-**最后更新：** 2026-09-04
+**最后更新：** 2026-09-17
 
 ---
 
@@ -16,8 +16,8 @@
 | 模块 | 主进程装配模块 | 8 | 001-004 共 4 个模块，各含 spec.md + plan.md |
 | 模块 | 构建与配置模块 | 4 | 005-006 共 2 个模块，各含 spec.md + plan.md |
 | 模块 | 运行时集成模块 | 4 | 007-008 共 2 个模块，各含 spec.md + plan.md |
-| 模块 | 扩展模块 | 2 | 201-dsh-market（spec + plan） |
-| **合计** | **9 模块目录 / 27 文件**（含 README 索引） | | |
+| 模块 | 扩展模块 | 5 | 201-dsh-market（spec + plan）+ 201-plugin-fs-mutate（spec + plan + test-cases） |
+| **合计** | **10 模块目录 / 30 文件**（含 README 索引） | | |
 
 > 注：本项目级规格文档集不含 `API.md`、`overall-api.md`、`overall-test-cases.md`——数据面在 dsh 侧，本工程无自有 API 清单，这些文档尚未生成（对齐 sibling desktop 规范集）。
 
@@ -139,6 +139,16 @@
 | 功能规格 | [201-dsh-market/spec.md](./201-dsh-market/spec.md) | dsh-market 集成功能规格 |
 | 技术方案 | [201-dsh-market/plan.md](./201-dsh-market/plan.md) | dsh-market 集成技术实现方案 |
 
+### 201 — fs-mutate 插件（工程内专用）（plugin-fs-mutate）
+
+> 把 `delete` / `move` 两个模型可见的文件工具收归本工程内专用插件目录 `plugins/harmony-plugin-fs-mutate/`：确立「通用插件放父工程 `dsh-plugins/`、专用插件放本工程 `plugins/`」的分工，全量改名为 `harmony-plugin-fs-mutate`，并让 `collectPlugins()` 从本工程 `plugins/` 物化、运行期镜像逻辑按新名复制并清理同族陈旧目录。
+
+| 文档 | 链接 | 说明 |
+|------|------|------|
+| 功能规格 | [201-plugin-fs-mutate/spec.md](./201-plugin-fs-mutate/spec.md) | fs-mutate 插件（工程内专用）功能规格 |
+| 技术方案 | [201-plugin-fs-mutate/plan.md](./201-plugin-fs-mutate/plan.md) | fs-mutate 插件（工程内专用）技术实现方案 |
+| 测试用例 | [201-plugin-fs-mutate/test-cases.md](./201-plugin-fs-mutate/test-cases.md) | 构建期断言 + 真机 `--inspect` 用例 |
+
 ---
 
 ## 七、模块编号一览
@@ -154,6 +164,7 @@
 | 007 | 运行时入口 | runtime-entry | 运行时集成 |
 | 008 | Web 桥接层 | web-bridge | 运行时集成 |
 | 201 | dsh-market 插件市场 | dsh-market | 扩展模块 |
+| 201 | fs-mutate 插件（工程内专用） | plugin-fs-mutate | 扩展模块 |
 
 ---
 
