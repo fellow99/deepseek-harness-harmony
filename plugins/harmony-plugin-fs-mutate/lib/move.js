@@ -3,35 +3,14 @@
  * fenced removal of the source. `ctx.fs` exposes no rename, and hmdfs (the
  * HarmonyOS filesystem behind the shipped product) documents its rename as
  * same-directory only, so copy-then-remove is the portable implementation; the
- * source is removed only after the copy succeeded.
+ * source is removed only after the copy succeeded. Each copied file travels as
+ * raw bytes (`readBytes` into `writeBytes`), so binary content moves unchanged.
  * @module harmony-plugin-fs-mutate/move
  */
 
 import { FsError } from '@deepseek-ai/dsh-fs'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { sessionResolveOptions } from './sandbox.js'
-
-/** `writeText` is text-only, so a copy decodes strictly and fails on binary input. */
-const UTF8 = new TextDecoder('utf-8', { fatal: true })
-
-/**
- * Decode one copied file, mapping the decoder's `TypeError` to the seam's own
- * `FS_NOT_TEXT` vocabulary rather than writing a corrupt copy.
- * @param bytes - the source file's complete bytes.
- * @param displayPath - the source's model-facing path, quoted in the error.
- * @returns the decoded UTF-8 text.
- */
-function decodeCopy(bytes, displayPath) {
-  try {
-    return UTF8.decode(bytes)
-  } catch (error) {
-    if (!(error instanceof TypeError)) throw error
-    throw new FsError(
-      `cannot move "${displayPath}": invalid UTF-8 text, and this filesystem seam can copy only text files`,
-      'FS_NOT_TEXT',
-    )
-  }
-}
 
 /**
  * Plan a destination tree without mutating anything: every regular file below
@@ -101,9 +80,9 @@ function assertReproducible(source, plan) {
 async function copyFiles(ctx, plan, transfer) {
   for (const file of plan.files) {
     const bytes = await ctx.fs.readBytes(file.source, transfer.signal, transfer.maxTransferBytes)
-    await ctx.fs.writeText(
+    await ctx.fs.writeBytes(
       file.destination,
-      decodeCopy(bytes, file.source.displayPath),
+      bytes,
       { kind: 'createIfAbsent' },
       transfer.signal,
       transfer.policy,
@@ -133,10 +112,10 @@ export function applyMoveTool(ctx, sandbox, maxTransferBytes) {
   ctx.tools.register(defineTool({
     name: 'move',
     description: 'Move or rename a file or directory by copying it to `to` and then deleting `from`. The copy '
-      + 'never overwrites an existing destination file, and the source is deleted only after the copy succeeded. Only '
-      + 'UTF-8 text files can be copied; a directory requires recursive: true, and a directory that would be empty at '
-      + 'the destination is refused. Outside the session workspace a confining filesystem denies the copy and the '
-      + 'removal.',
+      + 'never overwrites an existing destination file, and the source is deleted only after the copy succeeded. Files '
+      + 'are copied byte-for-byte, so binary content moves unchanged; a directory requires recursive: true, and a '
+      + 'directory that would be empty at the destination is refused. Outside the session workspace a confining '
+      + 'filesystem denies the copy and the removal.',
     parameters: {
       from: { type: 'string', required: true, description: 'Path to move, resolved by the filesystem backend.' },
       to: { type: 'string', required: true, description: 'Destination path, resolved by the filesystem backend.' },

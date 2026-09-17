@@ -14,7 +14,7 @@ const {
   writeSync, openSync, closeSync, createReadStream,
 } = require('node:fs');
 const { createGunzip } = require('node:zlib');
-const { join, dirname } = require('node:path');
+const { join, dirname, delimiter } = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { networkInterfaces } = require('node:os');
 
@@ -190,6 +190,10 @@ const HARMONY_DISABLED_PRESET_ROWS = {
  * `fs-mutate`（harmony-plugin-fs-mutate）是本工程专用插件，由本工程 plugins/ 经 collect-dsh.mjs
  * 的 collectPlugins() 物化到 dsh-dist/node_modules，故 name 用裸包名；它经围栏原语 ctx.fs.remove
  * 补齐 delete / move —— 上游 tool-fs 只有读写，删除/移动此前在鸿蒙侧没有入口。
+ *
+ * `fs-search`（harmony-plugin-fs-search）同理：纯 JS 内容搜索，经 ctx.fs.listDir + readText 遍历，
+ * 不依赖 subprocess / ripgrep 二进制 —— 上游 tool-fs-search 在鸿蒙上装不起来（见其被禁原因）。
+ *
  * 本表与 collect-dsh.mjs 的 HARMONY_ENSURED_PRESET_ROWS 逐条镜像，改动需同时改两处。
  */
 const HARMONY_ENSURED_PRESET_ROWS = [
@@ -204,6 +208,12 @@ const HARMONY_ENSURED_PRESET_ROWS = [
     name: 'harmony-plugin-fs-mutate',
     requireRow: 'tool-fs',
     reason: 'HarmonyOS: 经围栏原语 ctx.fs.remove 补齐 delete / move（纯 JS，本工程 plugins 物化）',
+  },
+  {
+    id: 'fs-search',
+    name: 'harmony-plugin-fs-search',
+    requireRow: 'tool-fs',
+    reason: 'HarmonyOS: 纯 JS 内容搜索（替代依赖 subprocess 与 ripgrep 二进制的 tool-fs-search）',
   },
 ];
 
@@ -458,6 +468,8 @@ async function startHost() {
   ensureDesktopProfile(process.env.DSH_HOME);
   ensureDshMarketProfileLink(process.env.DSH_HOME);
   ensureDshPluginsProfileLink(process.env.DSH_HOME);
+  // 用户目录写入白名单：必须在 runProfile 之前设置，writableRoots 每次围栏判定都读它。
+  installExtraWritableRoots();
   process.env.DSH_DISABLE_HMR = '1';
   // 技能目录：故意放在 dsh-dist.tar.gz 之外（与 main.js 同目录），只换 HAP 即可更新技能。
   // 上游 skill-filesystem 读 DSH_BUNDLED_SKILL_DIR 作为 bundled default root（rank 600）；
@@ -575,6 +587,44 @@ function ensureSandboxHome() {
   } catch (err) {
     console.error('[dsh-harmony] ensureSandboxHome 失败:', err);
   }
+}
+
+// 真实用户家目录（/storage/Users/currentUser）：必须在 ensureSandboxHome() 覆盖 HOME 之前抓取，
+// 之后 homedir() 已指向沙箱内路径，再也看不到用户目录的父目录。供 installExtraWritableRoots() 使用。
+const USER_HOME_BEFORE_SANDBOX = (() => {
+  try { return require('node:os').homedir(); } catch { return null; }
+})();
+
+/**
+ * 把用户已授权的桌面/文档/下载目录写进 DSH 沙箱的可写白名单（`DSH_EXTRA_WRITABLE_ROOTS`）。
+ *
+ * 背景：应用已在 module.json5 声明 READ_WRITE_{DOWNLOAD,DOCUMENTS,DESKTOP}_DIRECTORY，系统层授权是
+ * 生效的，但这些目录不在 DSH 的 workspace-write 白名单里（白名单只有会话工作区 + 临时目录），于是每次
+ * 写入都要过一次提权审批。把目录一次性写进白名单即可免去逐次审批（上游 writableRoots 读该变量）。
+ *
+ * 该变量是**部署期状态、不是模型输入**：组合里没有任何能力能设置它，模型无法自行扩大可写面。
+ * 显式给出的 DSH_EXTRA_WRITABLE_ROOTS 优先，此时不再自动探测。列出的目录**不按存在性过滤**，
+ * 原因见函数体内注释（首次授权弹窗的时序会漏配）。
+ */
+function installExtraWritableRoots() {
+  if (process.env.DSH_EXTRA_WRITABLE_ROOTS) {
+    console.log('[dsh-harmony] DSH_EXTRA_WRITABLE_ROOTS 由环境指定，跳过用户目录探测:', process.env.DSH_EXTRA_WRITABLE_ROOTS);
+    return;
+  }
+  if (!USER_HOME_BEFORE_SANDBOX) {
+    console.warn('[dsh-harmony] 未取到用户家目录，用户目录未加入可写白名单');
+    return;
+  }
+  const candidates = ['Desktop', 'Documents', 'Download'].map((name) => join(USER_HOME_BEFORE_SANDBOX, name));
+  // 白名单**不按存在性过滤**：READ_WRITE_*_DIRECTORY 是 normal 权限，首次访问才弹窗授予，启动瞬间
+  // stat 可能失败 —— 若据此把目录排除，用户随后授权的目录会被漏掉，E2 静默失效。多列出的路径在围栏
+  // 里匹配不到任何目标，无害。存在性只用于日志，便于真机排查。
+  const reachable = candidates.filter((dir) => {
+    try { return existsSync(dir); } catch { return false; }
+  });
+  process.env.DSH_EXTRA_WRITABLE_ROOTS = candidates.join(delimiter);
+  console.log('[dsh-harmony] DSH_EXTRA_WRITABLE_ROOTS =', process.env.DSH_EXTRA_WRITABLE_ROOTS,
+    '| 启动时可达:', reachable.length > 0 ? reachable.join(', ') : '(均不可达，用户目录权限可能尚未授予)');
 }
 ensureSandboxHome();
 

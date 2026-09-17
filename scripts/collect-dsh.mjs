@@ -356,6 +356,9 @@ const HARMONY_DISABLED_PRESET_ROWS = {
  *
  * `fs-mutate`（harmony-plugin-fs-mutate）是本工程专用插件，由 collectPlugins() 从本工程 plugins/
  * 物化到 dsh-dist/node_modules，故 name 为裸包名；它经围栏原语 ctx.fs.remove 补齐 delete / move。
+ *
+ * `fs-search`（harmony-plugin-fs-search）同理：纯 JS 内容搜索，经 ctx.fs.listDir + readText 遍历，
+ * 不依赖 subprocess / ripgrep 二进制 —— 上游 tool-fs-search 在鸿蒙上装不起来（见其被禁原因）。
  */
 const HARMONY_ENSURED_PRESET_ROWS = [
   {
@@ -369,6 +372,12 @@ const HARMONY_ENSURED_PRESET_ROWS = [
     name: 'harmony-plugin-fs-mutate',
     requireRow: 'tool-fs',
     reason: 'HarmonyOS: 经围栏原语 ctx.fs.remove 补齐 delete / move（纯 JS，本工程 plugins 物化）',
+  },
+  {
+    id: 'fs-search',
+    name: 'harmony-plugin-fs-search',
+    requireRow: 'tool-fs',
+    reason: 'HarmonyOS: 纯 JS 内容搜索（替代依赖 subprocess 与 ripgrep 二进制的 tool-fs-search）',
   },
 ];
 

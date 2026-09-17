@@ -13,7 +13,7 @@
 | 工具 | 参数 | 行为 |
 |---|---|---|
 | `delete` | `paths`（必填）、`recursive?` | 对每个路径**独立**经 `ctx.fs.remove` 删除。任一路径失败都不会中断整批；结果列出已删除项，以及每个失败路径的**错误原文**。删除非空目录需 `recursive: true`。 |
-| `move` | `from`（必填）、`to`（必填）、`recursive?` | 先做受围栏保护的复制，再做受围栏保护的源删除。复制**从不覆盖**：目标已存在则整个 move 失败；源仅在复制成功后才被删除。搬移目录需 `recursive: true`。 |
+| `move` | `from`（必填）、`to`（必填）、`recursive?` | 先做受围栏保护的复制，再做受围栏保护的源删除。复制**从不覆盖**：目标已存在则整个 move 失败；源仅在复制成功后才被删除。文件**按字节复制**，二进制内容原样搬移。搬移目录需 `recursive: true`。 |
 
 所有变更都经 `ctx.fs`，因此目标身份、原子性与沙箱围栏均由所挂载的后端负责。本插件**从不**用 `node:fs` 打开路径，也**从不**调用 `rename` —— 产品所用的鸿蒙文件系统 `hmdfs` 在文档中把 rename 限定为**仅同目录**，因此「复制后删除」才是可移植的实现。
 
@@ -37,11 +37,11 @@
 
 **工具结果。** `delete` 渲染为 `Deleted N paths:` 与若干 `- <path> (<kind>)` 行；若有失败，再空一行并渲染 `Failed to delete M paths:` 与若干 `- <path>: <错误原文>` 行。`move` 对文件渲染 `Moved "<from>" to "<to>".`，对目录渲染 `Moved directory "<from>" to "<to>" (N files).`。
 
-**错误。** 失败均为 seam 的类型化 `FsError` 消息，未经改写：`cannot move "<path>": not found`、`cannot move "<path>": invalid UTF-8 text, and this filesystem seam can copy only text files`、`cannot move "<a>" to "<b>": the destination is the source itself or inside it`，以及上述沙箱标记。`delete` **把逐路径失败放进结果而非抛出**，因此模型总能拿到完整的批次结果。
+**错误。** 失败均为 seam 的类型化 `FsError` 消息，未经改写：`cannot move "<path>": not found`、`cannot move "<a>" to "<b>": the destination is the source itself or inside it`，以及上述沙箱标记。`delete` **把逐路径失败放进结果而非抛出**，因此模型总能拿到完整的批次结果。
 
 ## 已知限制
 
-- **move 只能复制文本。** `ctx.fs.writeText` 拒绝二进制内容，因此 `move` 使用严格 UTF-8 解码器解码，遇到二进制源会以 `FS_NOT_TEXT` 失败。二进制搬移超出本 seam 的能力范围。
+- **二进制搬移依赖已被 patch 的 seam。** 上游 `ctx.fs` 没有写字节的变更原语 —— `writeText` 拒绝二进制内容 —— 因此 `move` 经 [`dsh-fs-write-bytes.patch`](../../patches/dsh-v0.1.5-rc.2/dsh-fs-write-bytes.patch) 补入的 `writeBytes` 原语发布每个文件。在未打该补丁的组合上，seam 会拒绝写入，而不会写出被截断的副本。
 - **空目录无法搬移。** `ctx.fs` 没有建目录原语，目标目录只能作为「往里写文件」的副作用存在。若某棵树会产生空目录，则在**任何复制发生之前**整体拒绝，而不是静默丢弃该空目录。
 - **复制失败会留下部分目标。** 源仍然保留（仅在复制成功后才删除），但已写入目标的文件会留在那里；重试前需手动清掉目标。
 - **符号链接会被跟随并物化。** `listDir` 报告的是链接目标的类型，因此 move 会把链接目标的内容作为普通条目复制，而不会重建该链接。

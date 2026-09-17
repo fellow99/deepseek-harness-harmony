@@ -24,6 +24,8 @@ const patchFiles = [
   resolve(patchDir, 'dsh-hardlink-to-rename.patch'),
   resolve(patchDir, 'dsh-fs-hardlink-fallback.patch'),
   resolve(patchDir, 'dsh-fs-remove-primitive.patch'),
+  resolve(patchDir, 'dsh-fs-write-bytes.patch'),
+  resolve(patchDir, 'dsh-extra-writable-roots.patch'),
   resolve(patchDir, 'dsh-disable-lefthook-postinstall.patch'),
 ];
 

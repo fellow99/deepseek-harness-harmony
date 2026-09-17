@@ -13,7 +13,7 @@ Model-facing `delete` and `move` filesystem tools for DeepSeek Harness.
 | Tool | Arguments | Behavior |
 |---|---|---|
 | `delete` | `paths` (required), `recursive?` | Removes each path independently through `ctx.fs.remove`. One failure never stops the batch; the result lists what was deleted and the verbatim error for every path that failed. A non-empty directory needs `recursive: true`. |
-| `move` | `from` (required), `to` (required), `recursive?` | Fenced copy followed by a fenced removal of the source. The copy never overwrites: an existing destination file fails the move, and the source is removed only after the copy succeeded. A directory needs `recursive: true`. |
+| `move` | `from` (required), `to` (required), `recursive?` | Fenced copy followed by a fenced removal of the source. The copy never overwrites: an existing destination file fails the move, and the source is removed only after the copy succeeded. Files are copied byte-for-byte, so binary content moves unchanged. A directory needs `recursive: true`. |
 
 Every mutation goes through `ctx.fs`, so the mounted backend owns target identity, atomicity, and the sandbox fence. The plugin never opens a path with `node:fs`, and it never calls `rename` — `hmdfs` (the HarmonyOS filesystem behind the shipped product) documents its rename as same-directory only, so copy-then-remove is the portable implementation.
 
@@ -37,11 +37,11 @@ Under a confining `ctx.fs` (a backend whose `sandboxMode` is defined) both tools
 
 **Tool results.** `delete` renders `Deleted N paths:` with `- <path> (<kind>)` lines, then a blank line and `Failed to delete M paths:` with `- <path>: <verbatim error>` lines when any path failed. `move` renders `Moved "<from>" to "<to>".` for a file and `Moved directory "<from>" to "<to>" (N files).` for a directory.
 
-**Errors.** Failures are the seam's typed `FsError` messages, unchanged: `cannot move "<path>": not found`, `cannot move "<path>": invalid UTF-8 text, and this filesystem seam can copy only text files`, `cannot move "<a>" to "<b>": the destination is the source itself or inside it`, and the sandbox markers above. `delete` reports per-path failures in its result rather than throwing, so the model always receives the full batch outcome.
+**Errors.** Failures are the seam's typed `FsError` messages, unchanged: `cannot move "<path>": not found`, `cannot move "<a>" to "<b>": the destination is the source itself or inside it`, and the sandbox markers above. `delete` reports per-path failures in its result rather than throwing, so the model always receives the full batch outcome.
 
 ## Known Limitations
 
-- **A move copies text only.** `ctx.fs.writeText` rejects binary content, so a `move` decodes with a strict UTF-8 decoder and fails a binary source with `FS_NOT_TEXT`. Binary relocation is out of scope for this seam.
+- **Binary relocation depends on a patched seam.** Upstream `ctx.fs` exposes no byte-writing mutation — `writeText` rejects binary content — so `move` publishes each file through the `writeBytes` primitive added by [`dsh-fs-write-bytes.patch`](../../patches/dsh-v0.1.5-rc.2/dsh-fs-write-bytes.patch). In a composition without that patch the seam refuses the write instead of truncating the copy.
 - **An empty directory cannot be moved.** `ctx.fs` exposes no directory-creation primitive, so a destination directory exists only as a side effect of writing a file into it. A tree that would contain an empty directory is refused before anything is copied, instead of dropping the empty directory silently.
 - **A failed copy leaves a partial destination.** The source survives (it is removed only after a successful copy), but files already written to the destination stay there; delete the destination manually before retrying.
 - **A symlink is followed and materialized.** `listDir` reports the link's target type, so a move copies the link target's contents as regular entries rather than recreating the link.

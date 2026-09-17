@@ -1,0 +1,211 @@
+diff --git a/packages/fs/fs/src/types.ts b/packages/fs/fs/src/types.ts
+index 0184576..54d8d2b 100644
+--- a/packages/fs/fs/src/types.ts
++++ b/packages/fs/fs/src/types.ts
+@@ -143,6 +143,17 @@ export interface FsWriteOutcome {
+   after: string
+ }
+ 
++/**
++ * Outcome of a full-file byte write. A byte write carries no decoded text, so it
++ * reports no diff basis and names the written path instead.
++ */
++export interface FsWriteBytesOutcome {
++  /** The written target's display path, for model/UI-facing output. */
++  path: string
++  /** Whether the write created a new file or replaced an existing one. */
++  operation: 'create' | 'update'
++}
++
+ /** A literal-replacement edit request. */
+ export interface FsEditRequest {
+   /** Literal non-empty text to replace. Must match exactly (after line-ending normalization). */
+diff --git a/packages/fs/fs/src/index.ts b/packages/fs/fs/src/index.ts
+index 4d16600..50ec09a 100644
+--- a/packages/fs/fs/src/index.ts
++++ b/packages/fs/fs/src/index.ts
+@@ -23,6 +23,7 @@ import type {
+   FsVersion,
+   FsWriteIntent,
+   FsWriteOutcome,
++  FsWriteBytesOutcome,
+ } from './types.ts'
+ 
+ export {
+@@ -42,6 +43,7 @@ export type {
+   FsTarget,
+   FsWriteIntent,
+   FsWriteOutcome,
++  FsWriteBytesOutcome,
+ } from './types.ts'
+ 
+ declare module '@deepseek-ai/cordis' {
+@@ -258,6 +260,36 @@ export abstract class FileSystem extends Service {
+     sandboxPolicy?: SandboxExecutionPolicy,
+   ): Promise<FsWriteOutcome>
+ 
++  /**
++   * Atomically write raw bytes. The content is published undecoded, so this is
++   * the byte counterpart of {@link writeText}: no text decoding, no `FS_NOT_TEXT`
++   * rejection, and no diff basis. The base provider supports no byte write, so
++   * the default body throws `FS_IO_ERROR`; a backend that can write bytes
++   * overrides it.
++   * @param target - the resolved target to write.
++   * @param content - the full new file content, written verbatim.
++   * @param expected - the write intent guarding the write; omit for unconditional.
++   * @param signal - aborts before atomic publication takes effect.
++   * @param sandboxPolicy - the per-call mode and workspace root this write
++   *   runs under; a sandboxing backend fences the write by it, the bare backend
++   *   ignores it. Omit to leave the backend its own default.
++   * @returns the outcome, naming the written path and whether it was created or replaced.
++   */
++  async writeBytes(
++    target: FsTarget,
++    content: Uint8Array,
++    expected?: FsWriteIntent,
++    signal?: AbortSignal,
++    sandboxPolicy?: SandboxExecutionPolicy,
++  ): Promise<FsWriteBytesOutcome> {
++    void target
++    void content
++    void expected
++    void signal
++    void sandboxPolicy
++    throw new FsError('writeBytes is not supported by this filesystem backend', 'FS_IO_ERROR')
++  }
++
+   /**
+    * Atomically edit literal text. When supplied, the version guard is checked
+    * before matching so stale content reports `FS_STALE_VERSION`; omission edits
+diff --git a/packages/fs/fs-local/src/fsio.ts b/packages/fs/fs-local/src/fsio.ts
+index 5bc331e..6cce04d 100644
+--- a/packages/fs/fs-local/src/fsio.ts
++++ b/packages/fs/fs-local/src/fsio.ts
+@@ -593,7 +593,7 @@ async function throwGuardedCreateFailure(
+  * inherits the destination directory's DACL; a replacement copies the existing target's DACL
+  * onto the empty temp before writing and preserves the target descriptor at publication.
+  * @param absolutePath - destination; missing parent directories are created.
+- * @param content - the full UTF-8 text to write.
++ * @param content - the full new file content: text written UTF-8, or bytes written verbatim.
+  * @param mode - existing destination's POSIX mode to preserve, or `undefined` for a new file;
+  * inert as a mode on Windows but identifies replacement security semantics.
+  * @param signal - cancellation checked before final publication.
+@@ -604,7 +604,7 @@ async function throwGuardedCreateFailure(
+  */
+ export async function writeFileAtomic(
+   absolutePath: string,
+-  content: string,
++  content: string | Uint8Array,
+   mode: number | undefined,
+   signal: AbortSignal | undefined,
+   internals: FsIoInternals = {},
+@@ -639,7 +639,12 @@ export async function writeFileAtomic(
+     if (platform === 'win32' && mode !== undefined) {
+       await copyFileDacl(absolutePath, tempPath)
+     }
+-    await handle.writeFile(content, { encoding: 'utf8', ...signal ? { signal } : {} })
++    // The encoding option is meaningful only for the text path; bytes are written verbatim.
++    if (typeof content === 'string') {
++      await handle.writeFile(content, { encoding: 'utf8', ...signal ? { signal } : {} })
++    } else {
++      await handle.writeFile(content, { ...signal ? { signal } : {} })
++    }
+     await handle.sync()
+     await internals.inspectTemp?.({ stagingDir, tempPath })
+     if (mode !== undefined) await handle.chmod(mode)
+diff --git a/packages/fs/fs-local/src/index.ts b/packages/fs/fs-local/src/index.ts
+index fe08a0f..b1fc16b 100644
+--- a/packages/fs/fs-local/src/index.ts
++++ b/packages/fs/fs-local/src/index.ts
+@@ -20,6 +20,7 @@ import type {
+   FsTarget,
+   FsWriteIntent,
+   FsWriteOutcome,
++  FsWriteBytesOutcome,
+ } from '@deepseek-ai/dsh-fs'
+ import {
+   applyLiteralEdit,
+@@ -229,6 +230,43 @@ export class LocalFileSystem extends FileSystem {
+     })
+   }
+ 
++  override async writeBytes(
++    target: FsTarget,
++    content: Uint8Array,
++    expected?: FsWriteIntent,
++    signal?: AbortSignal,
++  ): Promise<FsWriteBytesOutcome> {
++    return this.withLock(target.targetKey, async () => {
++      const existing = await probe(target.targetKey)
++      if (existing && existing.type !== 'file') {
++        throw new FsError(`cannot write "${target.displayPath}": not a regular file`, 'FS_NOT_REGULAR_FILE')
++      }
++
++      if (expected?.kind === 'replaceIfVersion') {
++        // Stale guard: the file must still exist at the version the owner observed.
++        if (!existing) throw new FsError(`cannot write "${target.displayPath}": file no longer exists`, 'FS_STALE_VERSION')
++        if (existing.version !== expected.version) {
++          throw new FsError(`cannot write "${target.displayPath}": file changed since it was read`, 'FS_STALE_VERSION')
++        }
++      } else if (expected?.kind === 'createIfAbsent' && existing) {
++        // createIfAbsent onto an existing file: a blind overwrite — require a read first.
++        throw new FsError(`cannot overwrite existing "${target.displayPath}" without reading it first`, 'FS_NOT_OBSERVED')
++      }
++      // No expectation means an unconditional but still atomic write.
++
++      // No diff basis: the content is undecoded bytes, so there is no text to present.
++      await writeFileAtomic(
++        target.targetKey,
++        content,
++        existing?.mode,
++        signal,
++        this.internals,
++        expected?.kind === 'createIfAbsent' ? { displayPath: target.displayPath } : undefined,
++      )
++      return { path: target.displayPath, operation: existing ? 'update' : 'create' }
++    })
++  }
++
+   override async editText(
+     target: FsTarget,
+     edit: FsEditRequest,
+diff --git a/packages/fs/fs-sandbox/src/index.ts b/packages/fs/fs-sandbox/src/index.ts
+index 5f1fe67..470716e 100644
+--- a/packages/fs/fs-sandbox/src/index.ts
++++ b/packages/fs/fs-sandbox/src/index.ts
+@@ -35,6 +35,7 @@ import { writableRoots } from '@deepseek-ai/dsh-sandbox'
+ import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
+ import type {} from '@deepseek-ai/dsh-sandbox-policy'
+ import { isPathUnder } from './containment.ts'
++import type { FsWriteBytesOutcome } from '@deepseek-ai/dsh-fs'
+ 
+ /**
+  * Plugin config: the local backend's knobs verbatim (`cwd` resolution default
+@@ -87,6 +88,27 @@ export class SandboxedFileSystem extends LocalFileSystem {
+     return super.writeText(await this.checkedTarget(target, sandboxPolicy), content, expected, signal)
+   }
+ 
++  /**
++   * Fence the byte write by the per-call policy, then delegate to the inherited
++   * atomic write. See {@link checkedTarget}.
++   * @param target - the resolved target to write.
++   * @param content - the full new file content, written verbatim.
++   * @param expected - the write intent guarding the write; omit for unconditional.
++   * @param signal - aborts before atomic publication takes effect.
++   * @param sandboxPolicy - the per-call mode and workspace root; omit to use
++   *   the deployment fallback.
++   * @returns the write outcome from the inherited backend.
++   */
++  override async writeBytes(
++    target: FsTarget,
++    content: Uint8Array,
++    expected?: FsWriteIntent,
++    signal?: AbortSignal,
++    sandboxPolicy?: SandboxExecutionPolicy,
++  ): Promise<FsWriteBytesOutcome> {
++    return super.writeBytes(await this.checkedTarget(target, sandboxPolicy), content, expected, signal)
++  }
++
+   /**
+    * Fence the edit by the per-call policy, then delegate to the inherited
+    * atomic edit. See {@link checkedTarget}.
