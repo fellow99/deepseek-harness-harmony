@@ -1,10 +1,11 @@
 /**
- * Function plugin registering the model-facing `grep` tool: a pure-JavaScript,
- * recursive, caps-bounded content search over `ctx.fs`.
+ * Function plugin registering the model-facing `grep` and `glob` tools: a
+ * pure-JavaScript, recursive, caps-bounded content search and path discovery
+ * over `ctx.fs`.
  *
- * The upstream `@deepseek-ai/dsh-tool-fs-search` `grep` spawns the packaged
- * `@vscode/ripgrep` native binary, which the HarmonyOS build cannot execute, so
- * this plugin replaces content search with an in-process walk of the same
+ * The upstream `@deepseek-ai/dsh-tool-fs-search` `grep` and `glob` spawn the
+ * packaged `@vscode/ripgrep` native binary, which the HarmonyOS build cannot
+ * execute, so this plugin replaces both with an in-process walk of the same
  * filesystem seam. Every read goes through `ctx.fs`, so the mounted backend
  * keeps owning path identity, decoding, and binary rejection, and no native
  * module, subprocess, or `node:fs` handle is involved.
@@ -17,6 +18,7 @@ import z from '@deepseek-ai/schemastery'
 import { FsError } from '@deepseek-ai/dsh-fs'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { DEFAULT_LIMITS, compileInclude, formatSearchResult, runSearch } from './search.js'
+import { compileGlob, formatGlobResult, runGlob } from './glob.js'
 import { sessionResolveOptions } from './session.js'
 
 /** Plugin name used by loader diagnostics and preset rows. */
@@ -29,6 +31,10 @@ export const inject = ['tools', 'fs']
  * Plugin config: every cap is optional and takes its {@link DEFAULT_LIMITS}
  * value. Unbounded values are refused in `apply`, because the walk reads real
  * files on a device and an uncapped one would run until the caller gives up.
+ *
+ * `grep` consumes every key; `glob` shares `maxResults` (matching files),
+ * `maxFiles` (file entries visited), `maxDepth`, and `skippedDirectories`, and
+ * ignores the per-file read caps it does not read content with.
  */
 export const Config = z.object({
   maxResults: z.number().default(DEFAULT_LIMITS.maxResults),
@@ -89,7 +95,7 @@ function quoteList(names) {
 }
 
 /**
- * Register the `grep` tool over the mounted filesystem.
+ * Register the `grep` and `glob` tools over the mounted filesystem.
  *
  * @param ctx - the plugin context; registrations are effects scoped to it.
  * @param config - the resolved plugin config (schemastery filled every default).
@@ -167,6 +173,75 @@ export function apply(ctx, config) {
         signal: exec.signal,
       })
       return formatSearchResult(result, searchLimits)
+    },
+  }))
+
+  const globDescription = 'Find files whose paths match a glob pattern and return the matching file paths, one per line, '
+    + 'followed by a summary of how many files matched and how many file entries were visited. Results are FILES ONLY, '
+    + 'never directories. `*` matches any run of characters within one path segment, `?` matches exactly one character '
+    + 'within one path segment, and `**` matches across segments (globstar); every other character is literal. Matching '
+    + 'is against the path relative to the search root using "/" separators, except that a pattern with no "/" matches '
+    + `the file name at any depth, so \`*.ts\` searches the whole tree. The walk skips ${quoteList(limits.skippedDirectories)} `
+    + `and every dot-directory, but a hidden file is returned; it descends at most ${limits.maxDepth} directory levels below `
+    + `the search root, returns at most ${limits.maxResults} files, and visits at most ${limits.maxFiles} file entries. A `
+    + 'capped result is reported as truncated instead of being dropped silently.'
+
+  ctx.tools.register(defineTool({
+    name: 'glob',
+    description: globDescription,
+    parameters: {
+      pattern: {
+        type: 'string',
+        required: true,
+        description: 'Glob pattern matched against paths relative to the search root, with "*" and "?" matching within '
+          + 'one path segment and "**" matching across segments (for example "**/*.ts" or "src/**/*.test.js"). A pattern '
+          + 'with no "/" matches the file name at any depth, so "*.ts" searches the whole tree. Brace alternation, '
+          + 'negation, and comma-separated lists are rejected.',
+      },
+      path: {
+        type: 'string',
+        description: 'Directory to search. Defaults to the session workspace; a relative path resolves against it.',
+      },
+      max_results: {
+        type: 'integer',
+        description: `Optional lower cap on the files this call returns; a larger value is clamped to the tool's own cap of ${limits.maxResults}.`,
+      },
+    },
+    output: {
+      schema: { type: 'string' },
+      render: (_args, value) => [{ type: 'text', text: value }],
+    },
+    async execute(args, exec) {
+      if (args.pattern.length === 0) throw new Error('pattern must be a non-empty string')
+      if (args.path !== undefined && args.path.trim().length === 0) {
+        throw new Error('path must be a non-empty string when given')
+      }
+      if (args.max_results !== undefined && (!Number.isSafeInteger(args.max_results) || args.max_results < 1)) {
+        throw new Error('max_results must be a positive integer when given')
+      }
+      // Validate the pattern before any I/O, so a malformed call fails without touching the filesystem.
+      const matcher = compileGlob(args.pattern)
+      const globLimits = {
+        maxResults: args.max_results === undefined ? limits.maxResults : Math.min(args.max_results, limits.maxResults),
+        maxFiles: limits.maxFiles,
+        maxDepth: limits.maxDepth,
+        skippedDirectories: limits.skippedDirectories,
+      }
+      const requestedPath = args.path ?? '.'
+      const root = await ctx.fs.resolve(requestedPath, sessionResolveOptions(exec, requestedPath))
+      const info = await ctx.fs.stat(root, exec.signal)
+      if (info === undefined) throw new FsError(`cannot search "${root.displayPath}": not found`, 'FS_NOT_FOUND')
+      if (info.type === 'other') {
+        throw new FsError(`cannot search "${root.displayPath}": not a regular file or directory`, 'FS_NOT_REGULAR_FILE')
+      }
+      const result = await runGlob(ctx.fs, {
+        matcher,
+        root,
+        rootType: info.type,
+        limits: globLimits,
+        signal: exec.signal,
+      })
+      return formatGlobResult(result, globLimits)
     },
   }))
 }

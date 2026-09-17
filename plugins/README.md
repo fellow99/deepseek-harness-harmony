@@ -48,7 +48,7 @@
 | 插件 | 提供的工具 | 依赖的本工程补丁 |
 |---|---|---|
 | [`harmony-plugin-fs-mutate`](./harmony-plugin-fs-mutate/) | `delete`、`move` | [`dsh-fs-remove-primitive.patch`](../patches/dsh-v0.1.5-rc.2/dsh-fs-remove-primitive.patch)（提供 `ctx.fs.remove` 原语） |
-| [`harmony-plugin-fs-search`](./harmony-plugin-fs-search/) | `grep` | 无（纯 JavaScript 实现，仅使用既有的 `ctx.fs` seam，不依赖本工程任何补丁） |
+| [`harmony-plugin-fs-search`](./harmony-plugin-fs-search/) | `grep`、`glob` | 无（纯 JavaScript 实现，仅使用既有的 `ctx.fs` seam，不依赖本工程任何补丁） |
 
 ## 五、相关文档
 

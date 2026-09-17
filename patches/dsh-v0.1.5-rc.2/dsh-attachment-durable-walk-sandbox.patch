@@ -1,0 +1,50 @@
+diff --git a/packages/attachment/attachment-local/src/store.ts b/packages/attachment/attachment-local/src/store.ts
+index 7fab679e34..3c9105e206 100644
+--- a/packages/attachment/attachment-local/src/store.ts
++++ b/packages/attachment/attachment-local/src/store.ts
+@@ -3,6 +3,7 @@
+ import { createHash, randomUUID } from 'node:crypto'
+ import { constants, createReadStream } from 'node:fs'
+ import { chmod, link, mkdir, open, readFile, unlink } from 'node:fs/promises'
++import type { FileHandle } from 'node:fs/promises'
+ import { dirname, join, parse, resolve } from 'node:path'
+ import {
+   AttachmentError,
+@@ -123,6 +124,22 @@ export async function prepareImageFile(
+   }
+ }
+ 
++/**
++ * Whether the platform refused to open a directory handle. HarmonyOS denies
++ * opening the mount points above the application data root — `/`, `/data`,
++ * `/data/storage`, and `/data/storage/el2` all raise `EACCES` — so the ancestor
++ * durability walk below must treat such a level as outside its reach rather
++ * than failing the save. Those boot-time mount points are created and owned by
++ * the system, so their entry durability is not this process's to prove.
++ * @param error - the rejection raised while opening a directory.
++ * @returns whether the open was refused by the platform's access policy.
++ */
++function isOpenRefused(error: unknown): boolean {
++  if (!(error instanceof Error) || !('code' in error)) return false
++  const { code } = error
++  return code === 'EACCES' || code === 'EPERM'
++}
++
+ /**
+  * Make a directory's entries durable (fsync on a read-only directory handle).
+  * A synced file alone does not survive a crash when its directory entry never
+@@ -133,7 +150,13 @@ async function syncDirectory(path: string): Promise<void> {
+   /* v8 ignore next -- Windows cannot open directory handles; NTFS metadata journaling owns entry durability there. */
+   if (process.platform === 'win32') return
+   /* v8 ignore start -- Windows cannot exercise directory fsync; POSIX behavior tests enforce this peer. */
+-  const handle = await open(path, constants.O_RDONLY)
++  let handle: FileHandle
++  try {
++    handle = await open(path, constants.O_RDONLY)
++  } catch (error: unknown) {
++    if (isOpenRefused(error)) return
++    throw error
++  }
+   try {
+     await handle.sync()
+   } finally {

@@ -15,6 +15,7 @@ import { execSync } from 'node:child_process';
 import { cpSync, existsSync, lstatSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { wrapSharpStubCjs, wrapSharpStubEsm } from './lib/sharp-stub.mjs';
 
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const dshRoot = resolve(projectRoot, '../deepseek-harness');
@@ -296,37 +297,31 @@ function pruneForeignPrebuilds(dir, depth = 0) {
   }
 }
 
-/** 用纯 JS stub 替换 sharp 原生模块入口（libvips 在鸿蒙 aarch64 不可用，见 docs/工程规划.md §18.3）。 */
+/**
+ * 用纯 JS stub 替换 sharp 原生模块入口（libvips 在鸿蒙 aarch64 不可用，见 docs/工程规划.md §18.3）。
+ *
+ * stub body 位于 scripts/lib/sharp-stub-body.js，经 scripts/lib/sharp-stub.mjs 的同一对包装函数
+ * 嵌入 index.mjs / index.cjs（构建与测试共用，避免转义与漂移）。
+ *
+ * stub 能做的：按容器头解析并在 metadata() 返回真实的 format（png/jpeg/webp/gif，无法识别时不返回
+ * format）、width/height、depth、space、hasAlpha、pages，以及仅在字节确实携带时才给出的
+ * exif/icc/xmp/iptc/comments/orientation。
+ * stub 不能做的：任何解码、缩放、色彩空间转换与再编码 —— 因此需要转换的图片（GIF/动画、16-bit PNG、
+ * 带 ICC 或其他元数据等）仍会在附件规范化阶段明确报错。
+ */
 function applySharpStub() {
   const sharpDist = resolve(distDir, 'node_modules/sharp/dist');
   if (!existsSync(resolve(sharpDist, 'index.mjs')) || !existsSync(resolve(sharpDist, 'index.cjs'))) {
     console.warn('[collect-dsh] sharp 未找到，跳过 stub');
     return;
   }
-  const header = '/*!\n * Pure-JS sharp stub for HarmonyOS aarch64 (libvips unavailable).\n * See docs/工程规划.md §18.3.\n */\n';
-  const body = `function sharp(_input, _options) {
-  const toBuffer = async () => Buffer.alloc(0);
-  const raw = () => ({ toBuffer });
-  const chain = {
-    metadata: async () => ({ format: 'png', width: 1, height: 1 }),
-    raw,
-    toBuffer,
-    toFile: async () => undefined,
-    stats: async () => ({ channels: 3 }),
-    info: async () => ({ format: 'png', width: 1, height: 1 }),
-  };
-  return new Proxy(chain, {
-    get(target, prop) {
-      if (prop in target) return target[prop];
-      return () => chain;
-    },
-  });
-}
-`;
-  const esm = `${header}${body}sharp.default = sharp;\nexport default sharp;\n`;
-  const cjs = `${header}'use strict';\n\n${body}module.exports = sharp;\n`;
-  writeFileSync(resolve(sharpDist, 'index.mjs'), esm);
-  writeFileSync(resolve(sharpDist, 'index.cjs'), cjs);
+  const bodyPath = resolve(projectRoot, 'scripts/lib/sharp-stub-body.js');
+  if (!existsSync(bodyPath)) {
+    throw new Error(`[collect-dsh] sharp stub body 缺失: ${bodyPath}`);
+  }
+  const body = readFileSync(bodyPath, 'utf8');
+  writeFileSync(resolve(sharpDist, 'index.mjs'), wrapSharpStubEsm(body));
+  writeFileSync(resolve(sharpDist, 'index.cjs'), wrapSharpStubCjs(body));
   console.log('[collect-dsh] sharp 纯 JS stub 已写入 node_modules/sharp/dist');
 }
 
@@ -404,6 +399,55 @@ function ensurePresetRows(out) {
     ensured++;
   }
   return ensured;
+}
+
+/**
+ * HarmonyOS: `HARMONY_ENSURED_PRESET_ROWS` 必须与 `src-main/main.js` 的同名表逐条一致。
+ *
+ * 同一批 preset 行由两处分别补入：本脚本补进构建产物，`src-main/main.js` 在设备上按运行期
+ * preset 树再补一次。任何一侧漏改（新增行只加了一边，或改了 id / 包名 / requireRow），产物与
+ * 设备行为即分叉，而分叉只在运行期以 `agent-preset/invalid`（row "<id>" names a plugin that
+ * cannot be resolved，即创建会话直接失败）暴露，构建期完全静默。这里把它变成构建期硬失败。
+ *
+ * 采用「读源码互校」而非「共享模块 / JSON」是刻意的：共享文件要让 collect-runtime 多恢复一个
+ * 产物、给 APP_KEEP 多加一项，并给主进程引入一个启动期硬失败（产物缺失即无法启动）。互校在
+ * 不新增运行时产物、不新增启动失败模式的前提下消除了同一个分叉风险。
+ *
+ * 解析失败（定位不到表、或条目数与本地不符）同样抛错，避免正则漏匹配造成「假通过」。
+ * @returns {void}
+ */
+function assertPresetRowsMirrorMainJs() {
+  const mainPath = resolve(projectRoot, 'src-main/main.js');
+  const source = readFileSync(mainPath, 'utf8');
+  const start = source.indexOf('const HARMONY_ENSURED_PRESET_ROWS = [');
+  const end = start === -1 ? -1 : source.indexOf('\n];', start);
+  if (end === -1) {
+    throw new Error(`[collect-dsh] 无法在 ${mainPath} 定位 HARMONY_ENSURED_PRESET_ROWS，两处 preset 行无法互校`);
+  }
+  const slice = source.slice(start, end);
+  // 条目键序固定为 id → name → requireRow（requireRow 可缺省），与本文件的写法一致。
+  const parsed = [...slice.matchAll(/\{\s*id: '([^']+)',\s*name: '([^']+)',(?:\s*requireRow: '([^']+)',)?/g)]
+    .map((m) => ({ id: m[1], name: m[2], requireRow: m[3] ?? null }));
+  const local = HARMONY_ENSURED_PRESET_ROWS.map((spec) => ({
+    id: spec.id,
+    name: spec.name,
+    requireRow: spec.requireRow ?? null,
+  }));
+  if (parsed.length !== local.length) {
+    throw new Error(
+      `[collect-dsh] preset 行互校失败：src-main/main.js 解析出 ${parsed.length} 条，本脚本有 ${local.length} 条 —— 任一侧已改动，或其写法已无法被互校解析`,
+    );
+  }
+  const mirror = JSON.stringify(parsed);
+  const own = JSON.stringify(local);
+  if (mirror !== own) {
+    throw new Error(
+      `[collect-dsh] preset 行互校失败，两处 HARMONY_ENSURED_PRESET_ROWS 必须逐条一致：\n` +
+        `  src-main/main.js = ${mirror}\n` +
+        `  collect-dsh.mjs  = ${own}`,
+    );
+  }
+  console.log(`[collect-dsh] preset 行互校通过（${local.length} 条与 src-main/main.js 一致）`);
 }
 
 function patchAgentPresets() {
@@ -532,7 +576,9 @@ applySharpStub();
 // 6d. 注入 better-sqlite3 v138（Windows 不安装 native addon，部署包使用 OpenHarmony aarch64 成品）
 injectBetterSqlite3();
 
-// 6e. 适配 agent preset（禁用依赖 shell/subprocess/pty 的行，补齐列目录工具行）
+// 6e. 先互校两处 preset 行（与 src-main/main.js 逐条一致），再适配 agent preset
+//     （禁用依赖 shell/subprocess/pty 的行，补齐列目录工具行）
+assertPresetRowsMirrorMainJs();
 patchAgentPresets();
 
 // 7. 复制 web dist（pnpm deploy 不物化 build 产物，frontend-static 经

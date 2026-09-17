@@ -194,7 +194,9 @@ const HARMONY_DISABLED_PRESET_ROWS = {
  * `fs-search`（harmony-plugin-fs-search）同理：纯 JS 内容搜索，经 ctx.fs.listDir + readText 遍历，
  * 不依赖 subprocess / ripgrep 二进制 —— 上游 tool-fs-search 在鸿蒙上装不起来（见其被禁原因）。
  *
- * 本表与 collect-dsh.mjs 的 HARMONY_ENSURED_PRESET_ROWS 逐条镜像，改动需同时改两处。
+ * 本表与 collect-dsh.mjs 的 HARMONY_ENSURED_PRESET_ROWS 逐条镜像，改动需同时改两处 —— 该一致性
+ * 由 collect-dsh.mjs 的 assertPresetRowsMirrorMainJs() 在构建期机械互校（不等即构建失败），
+ * 不再只靠这条注释。
  */
 const HARMONY_ENSURED_PRESET_ROWS = [
   {

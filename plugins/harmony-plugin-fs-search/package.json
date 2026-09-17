@@ -2,14 +2,14 @@
   "name": "harmony-plugin-fs-search",
   "version": "0.1.0",
   "private": true,
-  "description": "DeepSeek Harness plugin: the model-facing grep content-search tool, a pure-JavaScript recursive search over ctx.fs with no native or subprocess dependency",
+  "description": "DeepSeek Harness plugin: the model-facing grep content-search and glob file-discovery tools, pure-JavaScript walks over ctx.fs with no native or subprocess dependency",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js"
   },
   "scripts": {
-    "test": "node tests/search.test.mjs"
+    "test": "node tests/search.test.mjs && node tests/glob.test.mjs"
   },
   "files": [
     "lib",

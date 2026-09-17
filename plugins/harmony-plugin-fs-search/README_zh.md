@@ -4,30 +4,33 @@
 
 # harmony-plugin-fs-search
 
-面向模型的 DeepSeek Harness `grep` 内容搜索工具。
+面向模型的 DeepSeek Harness `grep` 内容搜索与 `glob` 文件发现工具。
 
 ## 用途
 
-`@deepseek-ai/dsh-tool-fs-search` 通过 `ctx.subprocess` 执行打包的 `@vscode/ripgrep` 原生二进制来提供 `grep`/`glob`。鸿蒙构建做不到这一点（HAP 沙箱中没有可运行的原生二进制），因此停用了该 preset 行；而 `str_replace_editor` 的 `view` 命令已经覆盖了目录列举 —— 于是仍然缺失的是**内容搜索**。本插件用一个工具把这一点原样补回：
+`@deepseek-ai/dsh-tool-fs-search` 通过 `ctx.subprocess` 执行打包的 `@vscode/ripgrep` 原生二进制来提供 `grep`/`glob`。鸿蒙构建做不到这一点（HAP 沙箱中没有可运行的原生二进制），因此停用了该 preset 行；本插件用纯 JavaScript 遍历把两者都补齐：
 
 | 工具 | 参数 | 行为 |
 |---|---|---|
 | `grep` | `pattern`（必填）、`path?`、`include?`、`max_results?` | 递归遍历 `path`（默认为会话工作区），对每个匹配行返回一行 `<displayPath>:<lineNumber>: <line text>`，其后附一句汇总。 |
+| `glob` | `pattern`（必填）、`path?`、`max_results?` | 递归遍历 `path`（默认为会话工作区），每行返回一个匹配的**文件**路径，其后附一句汇总。目录永不返回，即使其自身名称匹配。 |
 
-搜索是运行在宿主进程中的纯 JavaScript：无原生二进制、无子进程、无 glob 包，也不使用 `node:fs`。每次读取都经 `ctx.fs`（`stat`、`listDir`、`readText`），因此路径身份、解码与二进制拒绝仍由所挂载的后端负责，与 `read`/`write`/`edit` 完全一致。由于本工具**只读**，它不提供任何沙箱提权字段 —— 读取永远不受围栏限制，只有变更才受。
+遍历是运行在宿主进程中的纯 JavaScript：无原生二进制、无子进程、无 glob 包，也不使用 `node:fs`。每次读取都经 `ctx.fs`（`stat`、`listDir`、`readText`），因此路径身份、解码与二进制拒绝仍由所挂载的后端负责，与 `read`/`write`/`edit` 完全一致。由于两个工具都**只读**，它们都不提供任何沙箱提权字段 —— 读取永远不受围栏限制，只有变更才受。
 
 ## 配置
 
 每个键都是可选的；默认值取自 `lib/search.js` 的 `DEFAULT_LIMITS`。所有数值上限都在 `apply` 中校验为**正的安全整数** —— 零、负数、小数，或超过 `Number.MAX_SAFE_INTEGER` 的值都会让组合失败，而不是静默地让某个边界失效。在设备上不能无界遍历：遍历会真实读取文件。
 
+`grep` 会用到每个键。`glob` 共享 `maxResults`（匹配文件数）、`maxFiles`（访问的文件条目数）、`maxDepth` 与 `skippedDirectories`，并忽略 `maxMatchesPerFile`、`maxFileBytes`、`maxLineChars`，因为它从不读取文件内容。
+
 | 键 | 默认值 | 含义 |
 |---|---|---|
-| `maxResults` | `200` | 单次调用保留的匹配总数。一旦下一个匹配会超出，遍历立即停止，汇总会说明结果被截断。 |
-| `maxMatchesPerFile` | `50` | 单个文件保留的匹配数；该文件后续匹配被丢弃，汇总会统计该文件。 |
-| `maxFiles` | `2000` | 单次调用读取的文件数。一旦下一个文件会超出，遍历立即停止，汇总会说明这一点。 |
-| `maxFileBytes` | `524288`（512 KiB） | 单个文件的字节上限（含边界）。上报大小更大的文件会在**被读取之前**跳过，并计入跳过。 |
+| `maxResults` | `200` | 单次调用保留的匹配总数（`grep`）或匹配文件数（`glob`）。一旦下一个匹配会超出，遍历立即停止，汇总会说明结果被截断。 |
+| `maxMatchesPerFile` | `50` | 单个文件保留的匹配数；该文件后续匹配被丢弃，汇总会统计该文件。仅 `grep`。 |
+| `maxFiles` | `2000` | 单次调用读取的文件数（`grep`）或访问的文件条目数（`glob`）。一旦下一个文件会超出，遍历立即停止，汇总会说明这一点。 |
+| `maxFileBytes` | `524288`（512 KiB） | 单个文件的字节上限（含边界）。上报大小更大的文件会在**被读取之前**跳过，并计入跳过。仅 `grep`。 |
 | `maxDepth` | `8` | 在搜索根之下下探的目录层级数。根本身为第 0 层，因此 `1` 会搜索根及其直接子目录。 |
-| `maxLineChars` | `300` | 每个匹配行保留的字符数，超出则截断并标记。 |
+| `maxLineChars` | `300` | 每个匹配行保留的字符数，超出则截断并标记。仅 `grep`。 |
 | `skippedDirectories` | `["node_modules", ".git"]` | 任意深度下**永不进入**的目录名。以 `.` 开头的名称也**始终**被跳过，因此从该列表移除 `.git` 并不会让它变为可搜索；在此列出它只是记录意图。隐藏**文件**仍会被搜索。 |
 
 ```yaml
@@ -65,6 +68,27 @@ Results were truncated because the maxResults cap of 200 was reached; narrow pat
 
 **错误。** 参数问题都是普通错误：`pattern must be a non-empty string`、`path must be a non-empty string when given`、`max_results must be a positive integer when given`、`pattern is not a valid JavaScript regular expression: <detail>`，以及下方 `include` 的各种拒绝。搜索根不可用时是类型化 `FsError`：`cannot search "<path>": not found`（`FS_NOT_FOUND`）或 `cannot search "<path>": not a regular file or directory`（`FS_NOT_REGULAR_FILE`）。列举根失败会原样传播后端自身的错误；`grep was aborted (tool timeout or caller cancellation)` 表示调用被放弃。不可读的**文件**从不是错误 —— 它会被跳过并计数。
 
+**`glob` 结果。** 值是一个字符串，渲染为一个文本块：每行一个匹配路径，空一行，然后是汇总句。
+
+```
+src/index.ts
+src/deep/nested.ts
+
+Found 2 files (files searched: 6).
+```
+
+**只列出文件** —— 名称匹配的目录会被遍历，但永不返回。汇总总会给出匹配文件数与访问的文件条目数，仅在适用时追加 `directories skipped as unreadable` 或 `directories not entered past maxDepth N`。无匹配的搜索只有汇总本身 —— `Found 0 files (files searched: 6).` 让遍历提前停止的边界会追加一句明说，而不是静默丢弃路径：
+
+```
+Found 200 files (files searched: 355).
+
+Results were truncated because the maxResults cap of 200 was reached; narrow pattern or path and retry.
+```
+
+**`glob` 参数。** `pattern` 是 glob 源码：`*` 匹配一个路径段内任意长度的字符，`?` 匹配一个路径段内的单个字符，`**` 跨段匹配（globstar）；其余字符都是字面量，反斜杠被规范化为 `/`。匹配针对相对搜索根、以 `/` 分隔的路径，但**不含 `/` 的 pattern 在任意深度匹配文件名** —— 因此 `*.ts` 搜索整棵树，而 `src/*.ts` 只匹配 `src` 的直接子项。`path` 默认为会话工作区；指向文件的 `path` 是按其名称匹配的单文件候选。`max_results` 只会在单次调用中**下调**工具自身的 `maxResults` 上限。
+
+**`glob` 错误。** 参数与根错误与 `grep` 相同；不支持的 pattern 会在任何 I/O 之前被拒绝：`pattern must be a non-empty string`、`pattern must be a positive glob; negated patterns ("!…") are not supported`、`pattern supports only "*", "?", and "**" wildcards; brace alternation (e.g. "*.{ts,tsx}") is not supported`、`pattern must be one glob, not a comma-separated list`。`glob was aborted (tool timeout or caller cancellation)` 表示调用被放弃。
+
 ## 已知限制
 
 - **没有 ripgrep 语法，也没有 flag。** `pattern` 是普通 JavaScript `RegExp` 源码，编译时不带任何 flag，因此没有忽略大小写模式、没有全词匹配开关，多行模式也不可用。匹配按行进行，所以只能跨换行匹配的模式什么也找不到。
@@ -75,10 +99,13 @@ Results were truncated because the maxResults cap of 200 was reached; narrow pat
 - **遍历是广度优先。** 结果按后端稳定的名称顺序、逐层给出，因此被截断的结果取到的是树的浅层，而不是完整走完某一棵很深的子树。
 - **显式指定的根优先于跳过列表与 `include`。** 名为 `.git` 或 `node_modules` 的 `path` 会被遍历，名为文件的 `path` 无论 `include` 如何都会被搜索 —— 同时 `maxFileBytes` 的大小检查仍然对它生效。符号链接的目录会被跟随，因为 `listDir` 报告的是链接目标的类型。
 - **未声明超时预算。** 工具注册时不带 `timeoutMs`，因此取消只能依赖 `exec.signal`（与 `read`/`write`/`edit` 的立场相同）。
-- **只有 `grep`。** 本插件不提供按模式发现文件（上游的 `glob`）；目录列举仍由 `str_replace_editor` 的 `view` 负责。
+- **`glob` 不按修改时间排序。** 上游 ripgrep 的发现结果按修改时间排序；本实现按后端稳定的名称顺序、广度优先给出，因此被 `maxResults` 截断的结果取到的是树的浅层。没有修改时间排序，也没有跨顶层条目的溢出采样。
+- **`glob` 跳过 VCS 与依赖目录。** 每个点目录以及 `skippedDirectories` 中的每个名称都永不进入，因此 pattern 永远不会暴露 git 元数据或依赖内部 —— 不同于上游 `glob`（它搜索隐藏与忽略文件，只排除 VCS 元数据目录）。隐藏**文件**仍会返回。
+- **`glob` 与 `grep` 共享上限。** `maxResults`、`maxFiles`、`maxDepth` 与 `skippedDirectories` 是两个工具共用的一套，没有独立的 glob 上限。让下探停止的 `maxDepth` 会在汇总中说明，而不是静默丢弃更深的匹配。
+- **`glob` 不支持花括号交替、取反与逗号列表。** 与 `grep` 的 `include` 一样会被提前拒绝，而不是去搜索模型没有要求的东西。
 
 ## 依赖
 
 `@deepseek-ai/cordis`、`@deepseek-ai/dsh-fs`、`@deepseek-ai/dsh-sandbox`、`@deepseek-ai/dsh-tools`、`@deepseek-ai/schemastery` 均声明为 `peerDependencies`，由消费方构建在运行时提供；它们随 `dsh-dist/node_modules` 一同发布，因此本插件**不发布**、也不自带任何被打包或安装的依赖。`dsh-sandbox` 仅用于 `canonicalPath`，即本族所有面向模型的文件系统工具共用的、针对符号链接 cwd 的规范化。纯 ESM、无构建步骤 —— `lib/` 即发布源码。
 
-`lib/search.js` —— 搜索引擎 —— **不 import 任何东西**，正因如此它能在裸 Node 上直接测试：`node tests/search.test.mjs` 以内存中的 `ctx.fs` 桩驱动它（无测试框架、无依赖），任何失败都以非零码退出。
+`lib/search.js`（`grep` 引擎）与 `lib/glob.js`（`glob` 引擎）**不 import 任何东西**，正因如此它们能在裸 Node 上直接测试：`node tests/search.test.mjs` 与 `node tests/glob.test.mjs` 以内存中的 `ctx.fs` 桩驱动它们（无测试框架、无依赖），任何失败都以非零码退出。

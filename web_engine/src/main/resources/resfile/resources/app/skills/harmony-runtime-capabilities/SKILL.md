@@ -10,17 +10,27 @@ This deployment runs inside a HarmonyOS HAP on the Electron-on-HarmonyOS runtime
 platform removes several capabilities that a normal `dsh` install has. Check the facts
 below before you spend turns discovering them.
 
-## Listing directories
+## Listing and finding files
 
-There is **no `ls`, `glob`, or `grep`**. Use `str_replace_editor` with `command: "view"`
-and a directory path — it lists non-hidden entries two levels deep.
+There is **no `ls`** and no shell. Use:
+
+- `str_replace_editor` with `command: "view"` and a directory path — it lists non-hidden entries two levels deep.
 
 ```
 str_replace_editor(command="view", path="/data/storage/el2/base/files/<workspace>")
 ```
 
-`grep`/`glob` are unavailable because they shell out to a ripgrep binary. To search
-content, read the files you care about and search them yourself.
+- `glob` — discover files by path pattern (`pattern` required, plus `path?` and `max_results?`).
+  It walks `ctx.fs` in pure JavaScript and returns **files only**, never directories. `*` and
+  `?` match within one path segment, `**` matches across segments, and a pattern with no `/`
+  matches the file name at any depth (`*.ts` searches the whole tree). Every dot-directory and
+  the configured `node_modules`/`.git` names are skipped; hidden *files* are returned.
+- `grep` — search file contents (`pattern` is a JavaScript regular expression source, plus
+  `path?`, `include?`, and `max_results?`). It returns `<path>:<line>: <text>` rows and skips
+  binary or unreadable files.
+
+Both are provided by a pure-JavaScript plugin; they do **not** spawn the ripgrep binary, which
+this sandbox cannot execute. They are search tools, not a shell.
 
 ## No command execution
 
@@ -96,7 +106,7 @@ Prefer keeping artifacts inside the workspace and telling the user where they ar
 | `web_search` / `web_fetch` | available |
 | `skill`, `todo_write`, goals, subagents, workflows, `present` | available |
 | shell / `bash` / `pwsh` | absent |
-| `glob` / `grep` (content search) | absent |
+| `glob` (file discovery) / `grep` (content search) | **available** (pure JavaScript, no ripgrep binary) |
 | `delete` / `move` (file mutation) | **available** |
 | rename / standalone `copy` / `chmod` | absent |
 | background jobs started from a shell | absent |
