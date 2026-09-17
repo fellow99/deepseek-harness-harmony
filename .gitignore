@@ -4,6 +4,9 @@
 /.idea
 **/build
 /.hvigor
+# hvigor 为 HAR 模块生成的 BuildProfile.ets：与 HAP 不同，它落在模块根目录而非 build/ 下，
+# 未被上面的 **/build 覆盖；内容随 buildMode 每次构建重写（release/debug 翻转），故不入库。
+/web_engine/BuildProfile.ets
 .cxx
 /.clangd
 /.clang-format
