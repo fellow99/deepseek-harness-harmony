@@ -12,6 +12,13 @@
     "deliveryWithInstall": true,
     "installationFree": false,
     "pages": "$profile:main_pages",
+    // 后台保活（K1）：申请长时任务需要该权限，业务类型由 EntryAbility 的 backgroundModes 声明。
+    // 权限本身是 system_grant（安装即授予）；能否真正申请到长时任务由系统按业务一致性校验。
+    "requestPermissions": [
+      {
+        "name": "ohos.permission.KEEP_BACKGROUND_RUNNING"
+      }
+    ],
     "metadata": [
       {
         "name": "client_id",
@@ -30,6 +37,12 @@
         "launchType": "specified",
         "removeMissionAfterTerminate": true,
         "exported": true,
+        // 后台保活（K1）：「长时任务」的业务类型。仅 UIAbility 可申请；TASK_KEEPING 自 API 21 起
+        // 对 PC/2in1 开放。申请成功后通知栏必显，用户删除该通知即停止任务——这是系统保证的可见性。
+        // 三个 Ability 中只有本 Ability 是主入口且在默认进程，故只在这里声明。
+        "backgroundModes": [
+          "taskKeeping"
+        ],
         "skills": [
           {
             "entities": [

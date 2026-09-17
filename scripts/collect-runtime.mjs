@@ -53,11 +53,13 @@ const EXCLUDE_TOP = new Set(['build', 'oh_modules', 'node_modules', '.git', '.hv
 
 /**
  * App 配置 overlay 白名单（相对工程/目标根的镜像路径）。
- * 共 8 个，均为本 App 自身的定制：HAR 权限表 + 3 个 adapter/jsbindings 定制 + 3 个 locale 资源。
+ * 共 9 个，均为本 App 自身的定制：2 个 module.json5（entry 的 manifest 含后台保活声明）+
+ * 1 个 Ability 源码（后台保活申请/释放）+ 快捷方式配置 + 2 个 adapter/jsbindings 定制 + 3 个 locale 资源。
  * 全部由阶段 7.6 做源/目标 md5 一致性守卫。
  */
 const OVERLAY_FILES = [
   'electron/src/main/module.json5',
+  'electron/src/main/ets/entryability/EntryAbility.ets',
   'web_engine/src/main/module.json5',
   'electron/src/main/resources/base/profile/shortcuts_config.json',
   'web_engine/src/main/ets/adapter/MediaAdapter.ets',
