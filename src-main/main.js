@@ -390,9 +390,12 @@ function ensureDshPluginsProfileLink(home) {
     console.error('[dsh-harmony] 读取 dsh-dist/node_modules 失败，专用插件未物化:', err.message);
     return;
   }
-  // 源集合为空即返回，含"不清理"：此时无法区分「确实没有插件」与「dsh-dist 尚未就绪」，
-  // 保守起见不做删除（残留目录无引用者，无害）。
+  // 源集合为空即返回（含不清理）：此时无法区分「确实没有插件」与「设备仍是旧 tar」，
+  // 而剪除旧名副本会使旧 tar 烘焙的旧 preset 行不可解析 → 会话创建失败。故刻意保守，
+  // 宁留无引用者的陈旧副本，也不制造不可用的会话入口（代价见 spec §6）。
   if (names.length === 0) return;
+  // 保留集取**实际复制成功**者：源里缺 package.json 的目录贴不出去，不该被保留成镜像外残留。
+  const copied = [];
   for (const name of names) {
     const src = join(DSH_ROOT, 'node_modules', name);
     if (!existsSync(join(src, 'package.json'))) continue;
@@ -402,6 +405,7 @@ function ensureDshPluginsProfileLink(home) {
       // 先删后拷：`force` 只覆盖同名文件，源里删掉的文件会留在目标，导致目标与源不一致。
       rmSync(dest, { recursive: true, force: true });
       cpSync(src, dest, { recursive: true, force: true, dereference: true });
+      copied.push(name);
       console.log('[dsh-harmony] 已复制', name, '→ profiles/node_modules');
     } catch (err) {
       // 复制失败 ⇒ preset 行不可解析 ⇒ 会话无法创建，必须响亮（不能沿用 dshmarket 的「不阻塞」）。
@@ -411,7 +415,7 @@ function ensureDshPluginsProfileLink(home) {
   // 陈旧清理：源集合之外的同族目录一律移除（改名、删插件后必然产生）。
   if (!existsSync(destRoot)) return;
   try {
-    const keep = new Set(names);
+    const keep = new Set(copied);
     for (const entry of readdirSync(destRoot)) {
       if (!isPluginName(entry) || keep.has(entry)) continue;
       rmSync(join(destRoot, entry), { recursive: true, force: true });

@@ -70,11 +70,12 @@
 | 项 | 内容 |
 |---|---|
 | 目的 | 落实 FR-6（纯迁移，行为零变更）与 FR-1.2（零残留） |
-| 步骤 | 1. `diff -r dsh-plugins/dsh-plugin-fs-mutate plugins/harmony-plugin-fs-mutate`<br>2. 统计差异行数<br>3. 逐行确认差异均为纯包名令牌替换<br>4. `grep -rn "dsh-plugin-fs-mutate" plugins/` |
-| 期望 | 差异**恰好 12 行**（`index.js` 3 / `sandbox.js` 2 / `delete.js` 1 / `move.js` 1 / `package.json` 1 / 两份 README 各 2），每行仅包名不同；旧名 grep **零命中** |
-| 证据 | `diff -r` 全量输出 + 差异行数 + grep 结果 |
-| 失败含义 | 差异行数 ≠ 12 → 有别于包名的改动混入，行为可能已变 |
-| 判据变更记录 | 本条原判据为「`lib/{sandbox,delete,move}.js` md5 逐字节一致」，开发阶段被证伪（见 spec.md FR-6.1）。md5 只能证明"没动"，`diff -r` 能同时证明"动的都是名字"，是**更强**的判据 |
+| 前置 | 旧目录已删除；旧副本已固化在 `logs/20260917-1/evidence/pre-migration-dsh-plugin-fs-mutate/`（其 `lib/{sandbox,delete,move}.js` md5 与迁移前记录的基线一致，故可证为迁移前真实状态） |
+| 步骤 | 1. `cp -r logs/20260917-1/evidence/pre-migration-dsh-plugin-fs-mutate /tmp/norm`<br>2. `find /tmp/norm -type f -exec sed -i 's/dsh-plugin-fs-mutate/harmony-plugin-fs-mutate/g' {} +`<br>3. `diff -r /tmp/norm plugins/harmony-plugin-fs-mutate`<br>4. 交叉校验：`diff -r <原始副本> plugins/harmony-plugin-fs-mutate \| grep -c "^[<>]"` 应为 24<br>5. `grep -rn "dsh-plugin-fs-mutate" plugins/` |
+| 期望 | 步骤 3 **无输出**（归一化后完全一致）；步骤 4 == 24（12 行 `-` + 12 行 `+`）；步骤 5 **零命中** |
+| 证据 | `diff -r` 输出（空）+ 行数计数 + grep 结果 |
+| 失败含义 | 步骤 3 有任何输出 → 存在**非包名**的改动混入，行为可能已变（比计数更早、更确定地暴露问题） |
+| 判据变更记录 | 原判据为「`lib/{sandbox,delete,move}.js` md5 逐字节一致」（开发阶段被证伪，见 spec.md FR-6.1）；改为「差异行数 == 12」后，评审指出**计数单独不充分**（12 处行为改动同样产生 12 行差异），故定稿为**归一化后 `diff -r` 为空**（充分、可机械化），计数降级为交叉校验 |
 
 ### TC-B6 —— 全工程旧名零残留
 

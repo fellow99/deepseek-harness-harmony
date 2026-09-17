@@ -89,6 +89,8 @@
 **FR-4.2** 目的：使 `profiles/node_modules/` 忠实镜像 `dsh-dist/node_modules/`，并消除"旧包残留 + 旧 preset 行仍能解析 → 静默加载过期插件"这一最难排查的状态。
 **FR-4.3** 清理范围必须**窄**：仅这两个通配。`dshmarket` 无 `plugin-` 前缀，不受影响。
 **FR-4.4** 清理失败不得中断启动（该目录无引用者，属纯卫生动作）；但需在日志中留痕。
+**FR-4.5** **前置条件（刻意保守）**：清理只在"新名插件确实已被物化"（即源集合非空）时执行。源集合为空时**既不复制也不清理**。理由：此时无法区分"确实没有插件"与"设备上的 `dsh-dist` 仍是旧 tar"，而**若此刻剪除旧名副本，会使旧 tar 中烘焙的旧 preset 行不可解析 → 会话创建失败**。宁留无引用者的陈旧副本，也不制造一个不可用的会话入口。
+**FR-4.6** 由此产生一条**已知边界**：**就地升级**（不卸载、保留设备 `$DSH_HOME/dsh-dist`）时，新 tar 因解压 marker 命中而不会重新解压，旧 preset 行与旧插件副本继续生效 → 应用仍可用，但**改名不生效**。持久生效需要**全新安装**或清除设备 `$DSH_HOME/dsh-dist`。见 §6 约束。
 
 ### FR-5 文档约定
 
@@ -98,10 +100,12 @@
 
 ### FR-6 零行为变更
 
-**FR-6.1** 迁移对插件源码的改动**仅限包名令牌**：全量 `diff -r`（旧目录 vs 新目录）必须**只有名字行不同，恰好 12 行**，不得有任何其它差异。分布为：`lib/index.js` 3 行（`@module`、`name` 导出、错误文案）、`lib/sandbox.js` 2 行（`@module`、错误文案）、`lib/delete.js` 1 行（`@module`）、`lib/move.js` 1 行（`@module`）、`package.json` 1 行（`name`）、`README.md` 2 行（标题、配置示例）、`README_zh.md` 2 行（标题、配置示例）。
+**FR-6.1** 迁移对插件源码的改动**仅限包名令牌**。**主判据（可机械化，且强于计数）**：把旧副本按 `sed 's/dsh-plugin-fs-mutate/harmony-plugin-fs-mutate/g'` 归一化后，与迁移结果 `diff -r` 必须**为空**——这证明每一处差异都**恰好**是包名令牌，不重不漏。令牌共 **12 处**，分布于 7 个文件：`lib/index.js` 3（`@module`、`name` 导出、错误文案）、`lib/sandbox.js` 2（`@module`、错误文案）、`lib/delete.js` 1（`@module`）、`lib/move.js` 1（`@module`）、`package.json` 1（`name`）、`README.md` 2（标题、配置示例）、`README_zh.md` 2（标题、配置示例）。
 
-> **判定口径说明**：本条原写作"`lib/{sandbox,delete,move}.js` 逐字节不变"，在开发阶段被证伪——`lib/sandbox.js:77` 的抛错文案与三个文件的 `@module` 标签都内嵌包名。二者不可兼得，且 **FR-1.2（零残留）优先**：错误文案若仍报旧包名，就是一条会误导排障的假线索。故判据从"逐字节不变"改为"仅名字令牌行不同"，其真正要保护的**行为零变更**由"差异行数 == 名字令牌数"等价保证。
-**FR-6.2** 工具名 `delete` / `move`、参数 schema、结果文案、错误文案、沙箱升级行为、`Config.maxTransferBytes` 语义与默认值（`10485760`）均不变。
+> **判定口径说明**：本条原写作"`lib/{sandbox,delete,move}.js` 逐字节不变"，在开发阶段被证伪——`lib/sandbox.js:77` 的抛错文案与三个文件的 `@module` 标签都内嵌包名。二者不可兼得，且 **FR-1.2（零残留）优先**：错误文案若仍报旧包名，就是一条会误导排障的假线索。
+> **辅助判据**：不一致行数 == 24（12 行 `-` + 12 行 `+`）。
+> ⚠️ **计数单独并不充分**：12 处行为改动同样会产生 12 行差异。充分性由上面的**归一化 diff 为空**提供；行数计数仅作交叉校验与人工复核的索引。
+**FR-6.2** 工具名 `delete` / `move`、参数 schema、工具**结果**文案、`ctx.fs` 抛出的 `FsError` 错误文案、沙箱升级行为、`Config.maxTransferBytes` 语义与默认值（`10485760`）均不变。**唯一例外**是插件自身不变式抛错的两处前缀随包名更新：`lib/index.js` 的 `maxTransferBytes must be a positive safe integer` 与 `lib/sandbox.js` 的 `the mounted filesystem confines but ctx.sandboxPolicy is missing`——它们是名字令牌，见 FR-6.1。
 
 ## 4. 目录约定
 
@@ -130,7 +134,7 @@
 | AC-10 | 真机 `delete` 工具真实删除文件；`move` 工具真实移动文件 | `--inspect` 发起对话 + 读工具结果 |
 | AC-11 | 既有能力不退化：列目录（`tool-str-replace-editor` 的 `view`）与 `skill` 工具仍可用 | `--inspect` 对话 |
 | AC-12 | 两个 `README.md` 已就位；两端 `README.md` / `README_zh.md` 的插件约定章节已改为新分工 | 人工阅读 |
-| AC-13 | 插件源码差异**仅限包名令牌，恰好 12 行**，无其它改动 | `diff -r` 旧目录 vs 新目录 |
+| AC-13 | 旧副本经包名归一化（`sed 's/dsh-plugin-fs-mutate/harmony-plugin-fs-mutate/g'`）后与迁移结果 `diff -r` **为空**；不一致行数 == 24 | `sed` + `diff -r`；旧副本用 `logs/20260917-1/evidence/pre-migration-dsh-plugin-fs-mutate`（旧目录已删除，该副本已按迁移前基线 md5 验证） |
 
 ## 6. 约束
 
@@ -141,6 +145,8 @@
 - **日志规范**（constitution §3.3）：运行期输出统一 `[dsh-harmony]` 前缀，便于 `hilog | grep dsh-harmony`。
 - **禁 symlink**：鸿蒙沙箱拒绝 symlink，一律复制。
 - **不臆测未读代码**（constitution §3.1）：本文档中所有行号/符号均来自实际读取。
+- **改名生效条件**：本模块的改名在**全新安装**或清除设备 `$DSH_HOME/dsh-dist` 后生效。**就地升级**下（旧 `dsh-dist` 因 marker 命中而不重解压）应用继续以旧 preset 行 + 旧副本运行，功能不受影响，但改名不生效。这是刻意的保守取舍：若在旧 tar 仍在时剪除旧名副本，旧 preset 行将不可解析、直接导致会话创建失败（见 FR-4.5/FR-4.6）。
+- **不在本模块范围**：让 `ensureDshExtracted()` 具备版本感知（按内容/版本 hash 而非仅 marker 判定），以支持 `dsh-dist` 的就地刷新。这是影响**所有** `dsh-dist` 变更的既有架构缺口（不止本次改名），本模块只记录、不改动，以免引入范围外变更。
 
 ## 7. 术语
 
