@@ -1,7 +1,7 @@
 ---
 name: harmony-runtime-capabilities
 description: What this HarmonyOS build of DeepSeek Harness can and cannot do — available tools, how to list directories, why file creation can fail outside the workspace, and which shell/exec capabilities are absent. Read this before assuming a command or tool works.
-whenToUse: Before running shell commands, listing directories, deleting or moving files, writing into Desktop/Documents/Download, or when a tool seems to be missing.
+whenToUse: Before running shell commands, listing directories, deleting, moving or copying files, changing file permissions, writing into Desktop/Documents/Download, or when a tool seems to be missing.
 ---
 
 # HarmonyOS runtime capabilities
@@ -42,9 +42,9 @@ run. Do not plan work that depends on them.
 - Use `web_search` / `web_fetch` for network access (read-only, GET only).
 - The working directory is known from context; you cannot discover it with `pwd`.
 
-## Deleting and moving files
+## Deleting, moving, copying, and permissions
 
-Two file-mutation tools **are** available in this build:
+Four file-mutation tools **are** available in this build:
 
 - `delete` — `paths` (required), `recursive?`. Removes each path independently; one failure
   never stops the batch, and the result lists what was deleted plus the verbatim error for
@@ -52,23 +52,39 @@ Two file-mutation tools **are** available in this build:
 - `move` — `from` (required), `to` (required), `recursive?`. Copy-then-remove: the copy never
   overwrites (an existing destination fails the move), and the source is removed only after the
   copy succeeded. A directory needs `recursive: true`.
+- `copy` — `from` (required), `to` (required), `recursive?`. The same fenced copy as `move`
+  without the removal; like `move` it never overwrites an existing destination file.
+- `chmod` — `path` (required), `mode` (required). `mode` is three or four **octal** digits as a
+  string, for example `"644"` or `"0755"`; symbolic modes such as `"u+rw"` are refused.
 
-Both go through the same sandbox fence as `write`/`edit`, so a path outside the workspace is
+All four go through the same sandbox fence as `write`/`edit`, so a path outside the workspace is
 denied on the first attempt and needs the escalation described below. Use them freely for
 temporary files instead of leaving clutter behind.
 
-Known limitations of `move` (all verified on device):
+`copy` and `move` transfer each file **byte-for-byte** (raw read into raw write), so binary
+content survives unchanged — do not treat them as text-only.
 
-- **Text files only.** The seam's `writeText` rejects binary content, so moving a binary source
-  fails with `FS_NOT_TEXT`. There is no binary-relocation path.
-- **An empty directory cannot be moved.** The seam exposes no directory-creation primitive, so a
-  tree that would contain an empty directory is refused up front rather than silently dropping it.
-- **A failed copy leaves a partial destination.** The source survives (it is removed only after a
-  successful copy), but files already written to the destination stay there — remove the
-  destination before retrying.
+Known limitations (all verified on device):
 
-`rename`, a standalone `copy`, and `chmod` remain **absent**: there is no tool for them and no
-shell to fall back on. Do not rely on write-then-rename strategies — use `move` to relocate a file.
+- **An empty directory cannot be copied or moved.** The seam exposes no directory-creation
+  primitive, so a tree that would contain an empty directory is refused up front rather than
+  silently dropping it.
+- **A copy never overwrites.** An existing destination file fails the operation; delete or move
+  it out of the way first if you need to replace it.
+- **A failed copy leaves a partial destination.** For `move` the source survives (it is removed
+  only after a successful copy), but files already written to the destination stay there —
+  remove the destination before retrying.
+- **A copied file gets the backend's default mode, not the source's.** The copy publishes through
+  the atomic-write path, which creates the destination with mode `0600`; the source's permission
+  bits are not carried over. Use `chmod` afterwards when the mode matters.
+- **`chmod` only takes effect inside the workspace.** The new mode is read back and verified, and
+  on the shared user directories under `/storage/Users/currentUser` (the `hmdfs` volume) the
+  filesystem accepts the call while keeping the old mode. This build reports that as a failure
+  instead of a silent success, so an error there means "this filesystem ignores permission bits",
+  not "you wrote the call wrong". Inside the workspace (the `hmfs` volume) the bits take effect.
+- **`rename` is still absent.** There is no rename tool and no shell, so `move` is
+  copy-then-remove: the destination is a new file with new metadata (a fresh modification time,
+  and the mode described above). Do not rely on write-then-rename strategies.
 
 ## Creating files
 
@@ -107,8 +123,9 @@ Prefer keeping artifacts inside the workspace and telling the user where they ar
 | `skill`, `todo_write`, goals, subagents, workflows, `present` | available |
 | shell / `bash` / `pwsh` | absent |
 | `glob` (file discovery) / `grep` (content search) | **available** (pure JavaScript, no ripgrep binary) |
-| `delete` / `move` (file mutation) | **available** |
-| rename / standalone `copy` / `chmod` | absent |
+| `delete` / `move` / `copy` (file mutation) | **available** |
+| `chmod` (permission bits) | **available** in the workspace; the user-directory volume ignores it and the tool reports that as an error |
+| `rename` | absent (use `move`, which is copy-then-remove) |
 | background jobs started from a shell | absent |
 
 ## Related reading

@@ -209,7 +209,7 @@ const HARMONY_ENSURED_PRESET_ROWS = [
     id: 'fs-mutate',
     name: 'harmony-plugin-fs-mutate',
     requireRow: 'tool-fs',
-    reason: 'HarmonyOS: 经围栏原语 ctx.fs.remove 补齐 delete / move（纯 JS，本工程 plugins 物化）',
+    reason: 'HarmonyOS: 经围栏 ctx.fs 原语补齐 delete / move / copy / chmod（纯 JS，本工程 plugins 物化）',
   },
   {
     id: 'fs-search',

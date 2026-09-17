@@ -28,6 +28,7 @@ const patchFiles = [
   resolve(patchDir, 'dsh-extra-writable-roots.patch'),
   resolve(patchDir, 'dsh-disable-lefthook-postinstall.patch'),
   resolve(patchDir, 'dsh-attachment-durable-walk-sandbox.patch'),
+  resolve(patchDir, 'dsh-fs-chmod-primitive.patch'),
 ];
 
 // pnpm/tsdown 在无 TTY 时中止模块重建与依赖检查，故设 CI 使其自动处理

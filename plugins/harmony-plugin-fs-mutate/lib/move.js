@@ -5,91 +5,15 @@
  * same-directory only, so copy-then-remove is the portable implementation; the
  * source is removed only after the copy succeeded. Each copied file travels as
  * raw bytes (`readBytes` into `writeBytes`), so binary content moves unchanged.
+ * The planner is shared with the `copy` tool, so both enforce identical
+ * containment, overwrite, and empty-directory rules.
  * @module harmony-plugin-fs-mutate/move
  */
 
 import { FsError } from '@deepseek-ai/dsh-fs'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { sessionResolveOptions } from './sandbox.js'
-
-/**
- * Plan a destination tree without mutating anything: every regular file below
- * the source paired with the destination target to write it to, plus every
- * directory that would be empty. `resolve` accepts a not-yet-existing cwd, so
- * the whole plan is built before the first write.
- * @param ctx - the plugin context whose `fs` service is walked.
- * @param source - the resolved source directory.
- * @param destination - the resolved destination directory.
- * @param transfer - the per-call signal, policy, and byte cap.
- * @returns the file pairs and the display paths of the empty directories.
- */
-async function planTree(ctx, source, destination, transfer) {
-  const files = []
-  const emptyDirectories = []
-  async function visit(sourceDirectory, destinationDirectory) {
-    const entries = await ctx.fs.listDir(sourceDirectory, transfer.signal)
-    if (entries.length === 0) {
-      emptyDirectories.push(sourceDirectory.displayPath)
-      return
-    }
-    for (const entry of entries) {
-      const childDestination = await ctx.fs.resolve(
-        entry.name,
-        { cwd: destinationDirectory.displayPath, signal: transfer.signal },
-      )
-      if (entry.type === 'directory') {
-        await visit(entry.target, childDestination)
-        continue
-      }
-      if (entry.type !== 'file') {
-        throw new FsError(`cannot move "${entry.target.displayPath}": not a regular file or directory`, 'FS_NOT_REGULAR_FILE')
-      }
-      files.push({ source: entry.target, destination: childDestination })
-    }
-  }
-  await visit(source, destination)
-  return { files, emptyDirectories }
-}
-
-/**
- * Refuse a tree the seam cannot reproduce BEFORE anything is copied. `ctx.fs`
- * exposes no directory-creation primitive, so a destination directory exists
- * only as a side effect of writing a file into it — an empty directory has
- * nothing to write, and dropping it silently would lose structure.
- * @param source - the resolved source directory.
- * @param plan - the planned file pairs and empty directories.
- */
-function assertReproducible(source, plan) {
-  if (plan.emptyDirectories.length === 0) return
-  throw new FsError(
-    `cannot move "${source.displayPath}": ${plan.emptyDirectories.map(path => `"${path}"`).join(', ')} `
-      + 'would be empty at the destination, and this filesystem seam cannot create a directory without a file',
-    'FS_IO_ERROR',
-  )
-}
-
-/**
- * Write every planned file with `createIfAbsent`, so an existing destination
- * file fails the move instead of being overwritten. Passing the per-call
- * sandbox policy makes each write fenced by the mounted backend.
- * @param ctx - the plugin context whose `fs` service performs the copy.
- * @param plan - the planned source/destination file pairs.
- * @param transfer - the per-call signal, policy, and byte cap.
- * @returns the number of files written.
- */
-async function copyFiles(ctx, plan, transfer) {
-  for (const file of plan.files) {
-    const bytes = await ctx.fs.readBytes(file.source, transfer.signal, transfer.maxTransferBytes)
-    await ctx.fs.writeBytes(
-      file.destination,
-      bytes,
-      { kind: 'createIfAbsent' },
-      transfer.signal,
-      transfer.policy,
-    )
-  }
-  return plan.files.length
-}
+import { copyPlannedFiles, describeTreeRefusal, planTransferTree } from './transfer.js'
 
 /**
  * Render a completed move as one model-facing text block.
@@ -162,10 +86,11 @@ export function applyMoveTool(ctx, sandbox, maxTransferBytes) {
       const transfer = { signal: exec.signal, policy, maxTransferBytes }
       try {
         const plan = info.type === 'directory'
-          ? await planTree(ctx, source, destination, transfer)
-          : { files: [{ source, destination }], emptyDirectories: [] }
-        assertReproducible(source, plan)
-        const files = await copyFiles(ctx, plan, transfer)
+          ? await planTransferTree(ctx.fs, source, destination, transfer)
+          : { files: [{ source, destination }], emptyDirectories: [], irregular: [] }
+        const refusal = describeTreeRefusal('move', source, plan)
+        if (refusal !== null) throw new FsError(refusal.message, refusal.code)
+        const files = await copyPlannedFiles(ctx.fs, plan, transfer)
         await ctx.fs.remove(source, { recursive: info.type === 'directory', signal: exec.signal }, policy)
         return { from: source.displayPath, to: destination.displayPath, kind: info.type, files }
       } catch (error) {

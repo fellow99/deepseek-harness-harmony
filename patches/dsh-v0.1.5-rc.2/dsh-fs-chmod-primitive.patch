@@ -1,0 +1,197 @@
+diff --git a/packages/fs/fs-local/src/chmod.ts b/packages/fs/fs-local/src/chmod.ts
+new file mode 100644
+index 0000000000..faed8b46c8
+--- /dev/null
++++ b/packages/fs/fs-local/src/chmod.ts
+@@ -0,0 +1,48 @@
++/**
++ * Raw permission-change mechanics for the local `ctx.fs` backend. Kept beside
++ * `fsio.ts` rather than inside it so a sandbox-fenced permission change composes
++ * with the read/write/edit primitives without widening the atomic-write module.
++ * @module @deepseek-ai/dsh-fs-local/chmod
++ */
++
++import { chmod, stat } from 'node:fs/promises'
++import { FsError } from '@deepseek-ai/dsh-fs'
++
++/** Mask selecting only the permission and setuid/setgid/sticky bits. */
++const PERMISSION_BITS = 0o7777
++
++/**
++ * Apply permission bits to a path and read them back, so a storage layer that
++ * accepts the call while ignoring the mode fails loudly instead of reporting a
++ * change it never made. The mode follows a final symlink, as `chmod(2)` does, so
++ * the reported bits describe the entry the caller reached.
++ * @param absolutePath - the canonical path to change (typically a target key).
++ * @param mode - the POSIX permission bits to apply; only `0o7777` is considered.
++ * @param signal - aborts before the change (`FS_ABORTED`).
++ * @returns the permission bits read back after the change.
++ */
++export async function chmodPath(
++  absolutePath: string,
++  mode: number,
++  signal?: AbortSignal,
++): Promise<number> {
++  if (signal?.aborted) throw new FsError('chmod aborted', 'FS_ABORTED')
++  const requested = mode & PERMISSION_BITS
++  try {
++    await chmod(absolutePath, requested)
++  } catch (error: unknown) {
++    const code = (error as NodeJS.ErrnoException | null)?.code
++    if (code === 'ENOENT' || code === 'ENOTDIR') {
++      throw new FsError(`cannot chmod "${absolutePath}": not found`, 'FS_NOT_FOUND')
++    }
++    throw error
++  }
++  const applied = (await stat(absolutePath)).mode & PERMISSION_BITS
++  if (applied !== requested) {
++    throw new FsError(
++      `cannot chmod "${absolutePath}": the filesystem kept mode ${applied.toString(8)} instead of ${requested.toString(8)}`,
++      'FS_IO_ERROR',
++    )
++  }
++  return applied
++}
+diff --git a/packages/fs/fs-local/src/index.ts b/packages/fs/fs-local/src/index.ts
+index b1fc16b1a3..b02ea521b3 100644
+--- a/packages/fs/fs-local/src/index.ts
++++ b/packages/fs/fs-local/src/index.ts
+@@ -10,6 +10,8 @@ import { isAbsolute, relative, resolve, sep } from 'node:path'
+ import { pathToFileURL } from 'node:url'
+ import z from '@deepseek-ai/schemastery'
+ import { FileSystem, FsError, FsVersion } from '@deepseek-ai/dsh-fs'
++import type { FsChmodOutcome } from '@deepseek-ai/dsh-fs'
++import { chmodPath } from './chmod.ts'
+ import type {
+   FsDirEntry,
+   FsEditOutcome,
+@@ -175,6 +177,17 @@ export class LocalFileSystem extends FileSystem {
+     }))
+   }
+ 
++  override async chmod(
++    target: FsTarget,
++    mode: number,
++    options?: { signal?: AbortSignal },
++  ): Promise<FsChmodOutcome> {
++    return this.withLock(target.targetKey, async () => {
++      const applied = await chmodPath(target.targetKey, mode, options?.signal)
++      return { path: target.displayPath, mode: applied }
++    })
++  }
++
+   override async writeText(
+     target: FsTarget,
+     content: string,
+diff --git a/packages/fs/fs-sandbox/src/index.ts b/packages/fs/fs-sandbox/src/index.ts
+index 470716ed62..b240b35019 100644
+--- a/packages/fs/fs-sandbox/src/index.ts
++++ b/packages/fs/fs-sandbox/src/index.ts
+@@ -27,6 +27,7 @@
+  */
+ 
+ import { Context } from '@deepseek-ai/cordis'
++import type { FsChmodOutcome } from '@deepseek-ai/dsh-fs'
+ import { LocalFileSystem } from '@deepseek-ai/dsh-fs-local'
+ import type { Config as LocalConfig } from '@deepseek-ai/dsh-fs-local'
+ import { FsError } from '@deepseek-ai/dsh-fs'
+@@ -67,6 +68,25 @@ export class SandboxedFileSystem extends LocalFileSystem {
+     return this.defaultMode
+   }
+ 
++  /**
++   * Fence the permission change by the per-call policy, then delegate to the
++   * inherited change. See {@link checkedTarget}.
++   * @param target - the resolved target to change.
++   * @param mode - the POSIX permission bits to apply.
++   * @param options - `signal` aborts before the change takes effect.
++   * @param sandboxPolicy - the per-call mode and workspace root; omit to use
++   *   the deployment fallback.
++   * @returns the change outcome from the inherited backend.
++   */
++  override async chmod(
++    target: FsTarget,
++    mode: number,
++    options?: { signal?: AbortSignal },
++    sandboxPolicy?: SandboxExecutionPolicy,
++  ): Promise<FsChmodOutcome> {
++    return super.chmod(await this.checkedTarget(target, sandboxPolicy), mode, options)
++  }
++
+   /**
+    * Fence the write by the per-call policy, then delegate to the inherited
+    * atomic write. See {@link checkedTarget}.
+diff --git a/packages/fs/fs/src/index.ts b/packages/fs/fs/src/index.ts
+index 50ec09a379..a8334bd125 100644
+--- a/packages/fs/fs/src/index.ts
++++ b/packages/fs/fs/src/index.ts
+@@ -14,6 +14,7 @@ import { FsError } from './types.ts'
+ import type {
+   FsDirEntry,
+   FsEditOutcome,
++  FsChmodOutcome,
+   FsEditRequest,
+   FsInfo,
+   FsPathInfo,
+@@ -32,6 +33,7 @@ export {
+   FsVersion,
+ } from './types.ts'
+ export type {
++  FsChmodOutcome,
+   FsEditOutcome,
+   FsEditRequest,
+   FsDirEntry,
+@@ -240,6 +242,34 @@ export abstract class FileSystem extends Service {
+    */
+   abstract listDir(target: FsTarget, signal?: AbortSignal): Promise<FsDirEntry[]>
+ 
++  /**
++   * Set a target's permission bits and confirm them. The base provider supports
++   * no permission change, so the default body throws `FS_IO_ERROR`; a backend
++   * that can change permissions overrides it. A storage layer that accepts the
++   * call while ignoring the mode is reported as a failure, never as a silent
++   * success, so callers may rely on the returned mode being in force.
++   * @param target - the resolved target to change.
++   * @param mode - the POSIX permission bits to apply; only `0o7777` is applied
++   *   and verified, so higher bits in the argument cannot widen the change.
++   * @param options - `signal` aborts before the change takes effect.
++   * @param sandboxPolicy - the per-call mode and workspace root this change
++   *   runs under; a sandboxing backend fences the change by it, the bare
++   *   backend ignores it. Omit to leave the backend its own default.
++   * @returns the outcome, naming the changed path and the mode read back.
++   */
++  async chmod(
++    target: FsTarget,
++    mode: number,
++    options?: { signal?: AbortSignal },
++    sandboxPolicy?: SandboxExecutionPolicy,
++  ): Promise<FsChmodOutcome> {
++    void target
++    void mode
++    void options
++    void sandboxPolicy
++    throw new FsError('chmod is not supported by this filesystem backend', 'FS_IO_ERROR')
++  }
++
+   /**
+    * Atomically create or replace UTF-8 text. `expected` guards intent and
+    * staleness; omission allows unconditional overwrite.
+diff --git a/packages/fs/fs/src/types.ts b/packages/fs/fs/src/types.ts
+index 54d8d2ba93..65f69fb167 100644
+--- a/packages/fs/fs/src/types.ts
++++ b/packages/fs/fs/src/types.ts
+@@ -164,6 +164,14 @@ export interface FsEditRequest {
+   replaceAll: boolean
+ }
+ 
++/** Outcome of a permission change. */
++export interface FsChmodOutcome {
++  /** The changed target's display path, for model/UI-facing output. */
++  path: string
++  /** The permission bits read back after the change (`mode & 0o7777`). */
++  mode: number
++}
++
+ /** Outcome of a literal edit. */
+ export interface FsEditOutcome {
+   /** Opaque version of the file after the edit. */

@@ -350,7 +350,9 @@ const HARMONY_DISABLED_PRESET_ROWS = {
  * 在 tool-fs-search 被禁用后这是唯一可用的列目录入口。`requireRow` 限定只加到已挂载该行的 preset。
  *
  * `fs-mutate`（harmony-plugin-fs-mutate）是本工程专用插件，由 collectPlugins() 从本工程 plugins/
- * 物化到 dsh-dist/node_modules，故 name 为裸包名；它经围栏原语 ctx.fs.remove 补齐 delete / move。
+ * 物化到 dsh-dist/node_modules，故 name 为裸包名；它经围栏 ctx.fs 原语补齐 delete / move / copy /
+ * chmod：remove 提供 delete 与 move 的删除半程，writeBytes（readBytes 读入）提供 copy 与 move 的
+ * 拷贝半程，chmod 提供权限位变更（本工程补丁新增，见 dsh-fs-chmod-primitive.patch）。
  *
  * `fs-search`（harmony-plugin-fs-search）同理：纯 JS 内容搜索，经 ctx.fs.listDir + readText 遍历，
  * 不依赖 subprocess / ripgrep 二进制 —— 上游 tool-fs-search 在鸿蒙上装不起来（见其被禁原因）。
@@ -366,7 +368,7 @@ const HARMONY_ENSURED_PRESET_ROWS = [
     id: 'fs-mutate',
     name: 'harmony-plugin-fs-mutate',
     requireRow: 'tool-fs',
-    reason: 'HarmonyOS: 经围栏原语 ctx.fs.remove 补齐 delete / move（纯 JS，本工程 plugins 物化）',
+    reason: 'HarmonyOS: 经围栏 ctx.fs 原语补齐 delete / move / copy / chmod（纯 JS，本工程 plugins 物化）',
   },
   {
     id: 'fs-search',
