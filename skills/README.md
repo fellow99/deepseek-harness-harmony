@@ -39,7 +39,7 @@ dsh skill-filesystem 的 bundled 根（rank 600、trustedHost —— 直接经 N
 |---|---|
 | 进程启动 | 只是把 `DSH_BUNDLED_SKILL_DIR` 配好；**不读技能** |
 | 技能发现 | **惰性** —— dsh 按需扫描技能根并按 cwd / scope 缓存 |
-| 会话首次请求**之前** | 注入一条持久的 user-role **技能目录**消息：仅 `name` + `description`（描述截断 500 字） |
+| 会话首次请求**之前** | 注入一条持久的 user-role **技能目录**消息：仅 `name` + `description`（描述截断 500 字）。前提：`skill` 工具可见、且至少有一个模型可调用的技能；发现不完整时不注入 |
 | 需要正文时 | **按需加载** —— 模型调用 `skill` 工具，或人工输入 `/name`。正文**不缓存**，每次重读文件 |
 
 ## 三、优先级：本目录的技能**可被覆盖**（有意行为）
@@ -55,7 +55,7 @@ dsh 的技能根按 rank 排序，**数字小者优先**：
 | 500 | `$DSH_AGENTS_HOME/skills` | 用户 |
 | **600** | **本目录（bundled）** | **本壳内置** |
 
-即 **bundled 优先级最低**：同名时用户级或项目级的同名技能会**覆盖**本壳内置的技能。这是刻意设计（让用户能改写内置行为），**不要试图"修掉"它**。
+即 **bundled 优先级最低**：同名时用户级或项目级的同名技能会**覆盖**本壳内置的技能。这是 rank 排序的直接结果，也正是「用户可改写内置行为」这一能力的来源 —— **不要试图"修掉"它**：那会一并取消这种覆盖能力。
 
 ## 四、命名与格式
 
@@ -71,7 +71,7 @@ dsh 的技能根按 rank 排序，**数字小者优先**：
 2. frontmatter 的 `name` 与目录名一致；`description` 写清「什么时候该用它」。
 3. 正文只写**在本壳上验证过**的事实；未验证的明确标注"未验证"。
 4. 重跑 ⓪：`node scripts/collect-runtime.mjs`（把 `skills/` 同步进 resfile），然后构建 HAP 并装机。
-   > 技能在 `dsh-dist.tar.gz` **之外**，故**无需**重跑 ② collect-dsh、**无需**重打 tar、**无需**删设备 `$DSH_HOME/dsh-dist`。
+   > 技能在 `dsh-dist.tar.gz` **之外**，故**无需**重跑 ② collect-dsh、**无需**重打 tar、**无需**删设备上已解压的 `dsh-dist`（它在 `userData` 下，是 `$DSH_HOME`（= `userData/.dsh`）的**兄弟目录**，不在 `.dsh` 内）。
 5. 设备上验证：`hilog -x | grep DSH_BUNDLED_SKILL_DIR` 确认路径，再用 `skill` 工具按名加载。
 
 > ⚠️ **本目录的技能是模型判断本壳能力边界的依据，写错比不写更有害。** 工程内已有先例：`harmony-runtime-capabilities` 曾因未随能力交付同步更新，声称 `delete` / `move` 不存在，导致模型拒绝使用已交付的工具（详见 [`specs/201-plugin-fs-mutate/`](../../specs/201-plugin-fs-mutate/)，其修正见提交 `c9ad23e`）。**能力发生变化时，必须同步更新引用了该能力的技能。**
