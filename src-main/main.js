@@ -801,7 +801,10 @@ async function installTray() {
     const payload = JSON.stringify({
       title: 'DeepSeek Harness',
       tooltips: 'DeepSeek Harness',
-      quickOperationHeight: 100,
+      // 300 is what Qt's OHOS platform plugin uses; quickOperationAbilityName is
+      // left unset so the adapter's empty-string default applies (Qt and the
+      // runtime's own StatusBarManagerAdapter both pass an empty string).
+      quickOperationHeight: 300,
       iconRawBase64: icon.toBitmap().toString('base64'),
       iconWidth: size.width,
       iconHeight: size.height,

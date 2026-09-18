@@ -58,7 +58,26 @@ interface SetupRequest {
   iconHeight?: number;
   /** Fallback: a base64 PNG, decoded with default options. */
   iconBase64?: string;
+  /**
+   * quickOperation window height. Qt's OHOS platform plugin uses 300.
+   */
   quickOperationHeight?: number;
+  /**
+   * Name of the StatusBarViewExtensionAbility that hosts the left-click popup.
+   * Both Qt's OHOS plugin and the runtime's own StatusBarManagerAdapter pass an
+   * EMPTY string here, so that is the default.
+   */
+  quickOperationAbilityName?: string;
+  /**
+   * quickOperation moduleName. Qt's OHOS plugin omits the field entirely, so it
+   * is omitted here too unless the caller sets it.
+   */
+  quickOperationModuleName?: string;
+  /**
+   * PixelMapFormat for the raw-icon path (default BGRA_8888, which is what the
+   * runtime's own adapter uses).
+   */
+  iconPixelFormat?: number;
   menu?: MenuNode[];
 }
 
@@ -122,10 +141,13 @@ export class TrayAdapter extends BaseAdapter {
       const menus: statusBarManager.StatusBarMenuItem[] = this.buildMenu(request.menu);
       const quickOperation: statusBarManager.QuickOperation = {
         title: request.title ?? 'DeepSeek Harness',
-        height: request.quickOperationHeight ?? 100,
-        abilityName: STATUS_BAR_VIEW_ABILITY,
-        moduleName: APP_MODULE,
+        height: request.quickOperationHeight ?? 300,
+        abilityName: request.quickOperationAbilityName ?? '',
       };
+      // Qt's OHOS plugin omits moduleName entirely, so only set it on request.
+      if (request.quickOperationModuleName !== undefined) {
+        quickOperation.moduleName = request.quickOperationModuleName;
+      }
       const icons: statusBarManager.StatusBarIcon = { white: icon, black: icon };
       const item: statusBarManager.StatusBarItem = {
         icons: icons,
@@ -194,9 +216,12 @@ export class TrayAdapter extends BaseAdapter {
       && request.iconHeight !== undefined) {
       const helper: util.Base64Helper = new util.Base64Helper();
       const raw: Uint8Array = helper.decodeSync(request.iconRawBase64);
+      const format: image.PixelMapFormat = request.iconPixelFormat === undefined
+        ? image.PixelMapFormat.BGRA_8888
+        : request.iconPixelFormat as image.PixelMapFormat;
       const options: image.InitializationOptions = {
         editable: false,
-        pixelFormat: image.PixelMapFormat.BGRA_8888,
+        pixelFormat: format,
         size: { width: request.iconWidth, height: request.iconHeight },
       };
       return image.createPixelMapSync(raw.buffer as ArrayBuffer, options);
