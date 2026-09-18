@@ -77,11 +77,13 @@ Known limitations (all verified on device):
 - **A copied file gets the backend's default mode, not the source's.** The copy publishes through
   the atomic-write path, which creates the destination with mode `0600`; the source's permission
   bits are not carried over. Use `chmod` afterwards when the mode matters.
-- **`chmod` only takes effect inside the workspace.** The new mode is read back and verified, and
-  on the shared user directories under `/storage/Users/currentUser` (the `hmdfs` volume) the
-  filesystem accepts the call while keeping the old mode. This build reports that as a failure
-  instead of a silent success, so an error there means "this filesystem ignores permission bits",
-  not "you wrote the call wrong". Inside the workspace (the `hmfs` volume) the bits take effect.
+- **`chmod` only takes effect inside the workspace.** The new mode is read back and verified. On the
+  shared user directories under `/storage/Users/currentUser` (the `hmdfs` volume) the filesystem
+  accepts the call but does **not** apply the mode you asked for — it stores a mode of its own
+  choosing (measured: a request for `640` came back as `660`) and returns no error. This build
+  reports that mismatch as a failure instead of a silent success, so an error there means "this
+  filesystem does not honor the requested permission bits", not "you wrote the call wrong". Inside
+  the workspace (the `hmfs` volume) the bits take effect.
 - **`rename` is still absent.** There is no rename tool and no shell, so `move` is
   copy-then-remove: the destination is a new file with new metadata (a fresh modification time,
   and the mode described above). Do not rely on write-then-rename strategies.
