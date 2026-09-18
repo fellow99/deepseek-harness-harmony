@@ -62,4 +62,4 @@
 
 ## 测试
 
-`npm test` 运行 `tests/permissions.test.mjs`（`mode` 语法）与 `tests/transfer.test.mjs`（共用规划器）。两者都在纯 Node 上运行、无测试框架：`lib/permissions.js` 与 `lib/transfer.js` 这两个引擎模块**刻意不含任何 import**，因此可以只用内存中的 `ctx.fs` 桩驱动，不碰真实磁盘、也不导入任何 dsh 包。`lib/delete.js` / `lib/move.js` / `lib/copy.js` / `lib/chmod.js` 中的工具注册部分在真机上经 `specs/201-plugin-fs-mutate/` 覆盖。
+`npm test` 运行 `tests/permissions.test.mjs`（`mode` 语法）与 `tests/transfer.test.mjs`（共用规划器）。两者都在纯 Node 上运行、无测试框架：`lib/permissions.js` 与 `lib/transfer.js` 这两个引擎模块**刻意不含任何 import**，因此可以只用内存中的 `ctx.fs` 桩驱动，不碰真实磁盘、也不导入任何 dsh 包。`lib/delete.js` / `lib/move.js` / `lib/copy.js` / `lib/chmod.js` 中的工具注册部分在真机上经 `specs/202-plugin-fs-mutate/` 覆盖。

@@ -74,7 +74,7 @@ dsh 的技能根按 rank 排序，**数字小者优先**：
    > 技能在 `dsh-dist.tar.gz` **之外**，故**无需**重跑 ② collect-dsh、**无需**重打 tar、**无需**删设备上已解压的 `dsh-dist`（它在 `userData` 下，是 `$DSH_HOME`（= `userData/.dsh`）的**兄弟目录**，不在 `.dsh` 内）。
 5. 设备上验证：`hilog -x | grep DSH_BUNDLED_SKILL_DIR` 确认路径，再用 `skill` 工具按名加载。
 
-> ⚠️ **本目录的技能是模型判断本壳能力边界的依据，写错比不写更有害。** 工程内已有先例：`harmony-runtime-capabilities` 曾因未随能力交付同步更新，声称 `delete` / `move` 不存在，导致模型拒绝使用已交付的工具（详见 [`specs/201-plugin-fs-mutate/`](../../specs/201-plugin-fs-mutate/)，其修正见提交 `c9ad23e`）。**能力发生变化时，必须同步更新引用了该能力的技能。**
+> ⚠️ **本目录的技能是模型判断本壳能力边界的依据，写错比不写更有害。** 工程内已有先例：`harmony-runtime-capabilities` 曾因未随能力交付同步更新，声称 `delete` / `move` 不存在，导致模型拒绝使用已交付的工具（规范源见 [`specs/301-skill-runtime-capabilities/`](../../specs/301-skill-runtime-capabilities/)，其修正见提交 `c9ad23e`）。**能力发生变化时，必须同步更新引用了该能力的技能。**
 
 ## 六、现有技能
 
@@ -86,4 +86,4 @@ dsh 的技能根按 rank 排序，**数字小者优先**：
 
 - [`../../skills/README.md`](../../skills/README.md) —— 父工程通用技能目录约定（含完整格式规则）
 - [`../plugins/README.md`](../plugins/README.md) —— 对应的**插件**两层约定（plugins 与 skills 是同一套分工思路）
-- [`../specs/201-plugin-fs-mutate/`](../specs/201-plugin-fs-mutate/) —— 技能内容与实际能力脱节的真实案例
+- [`../specs/202-plugin-fs-mutate/`](../specs/202-plugin-fs-mutate/) —— 技能内容与实际能力脱节的真实案例

@@ -1,6 +1,6 @@
 # SPECS_CHECKLIST.md — 规格检查清单
 
-> deepseek-harness-harmony 规范文档完成情况追踪（2026-09-04）。
+> deepseek-harness-harmony 规范文档完成情况追踪（2026-09-04，最后更新 2026-09-18）。
 
 ## 1. 项目级文档
 
@@ -31,8 +31,12 @@
 | M-07 | 007-runtime-entry（运行时入口） | [007-runtime-entry/spec.md](./007-runtime-entry/spec.md) | [007-runtime-entry/plan.md](./007-runtime-entry/plan.md) | ✅ Done |
 | M-08 | 008-web-bridge（Web 桥接层） | [008-web-bridge/spec.md](./008-web-bridge/spec.md) | [008-web-bridge/plan.md](./008-web-bridge/plan.md) | ✅ Done |
 | M-09 | 201-dsh-market（dsh-market 插件市场） | [201-dsh-market/spec.md](./201-dsh-market/spec.md) | [201-dsh-market/plan.md](./201-dsh-market/plan.md) | ✅ Done |
+| M-10 | 202-plugin-fs-mutate（fs-mutate 插件，工程内专用） | [202-plugin-fs-mutate/spec.md](./202-plugin-fs-mutate/spec.md) | [202-plugin-fs-mutate/plan.md](./202-plugin-fs-mutate/plan.md) | ✅ Done |
+| M-11 | 301-skill-runtime-capabilities（技能运行能力规范） | [301-skill-runtime-capabilities/spec.md](./301-skill-runtime-capabilities/spec.md) | [301-skill-runtime-capabilities/plan.md](./301-skill-runtime-capabilities/plan.md) | ✅ Done |
+
+> M-10 / M-11 另各含一份 `test-cases.md`（真机核验用例）。
 
 ## 3. 完成度统计
 
 - 项目级：9 / 9 完成
-- 模块级：9 / 9 完成
+- 模块级：11 / 11 完成

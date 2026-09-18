@@ -62,4 +62,4 @@ Under a confining `ctx.fs` (a backend whose `sandboxMode` is defined) all four t
 
 ## Tests
 
-`npm test` runs `tests/permissions.test.mjs` (the `mode` grammar) and `tests/transfer.test.mjs` (the shared planner). Both run on plain Node with no framework: the two engine modules — `lib/permissions.js` and `lib/transfer.js` — are deliberately import-free, so they are driven against an in-memory `ctx.fs` stub without touching a disk or importing any dsh package. The tool registrations in `lib/delete.js`, `lib/move.js`, `lib/copy.js`, and `lib/chmod.js` are covered on device through `specs/201-plugin-fs-mutate/`.
+`npm test` runs `tests/permissions.test.mjs` (the `mode` grammar) and `tests/transfer.test.mjs` (the shared planner). Both run on plain Node with no framework: the two engine modules — `lib/permissions.js` and `lib/transfer.js` — are deliberately import-free, so they are driven against an in-memory `ctx.fs` stub without touching a disk or importing any dsh package. The tool registrations in `lib/delete.js`, `lib/move.js`, `lib/copy.js`, and `lib/chmod.js` are covered on device through `specs/202-plugin-fs-mutate/`.

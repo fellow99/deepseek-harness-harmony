@@ -52,6 +52,6 @@
 
 ## 五、相关文档
 
-- [`specs/201-plugin-fs-mutate/`](../specs/201-plugin-fs-mutate/) —— fs-mutate 插件迁移与本约定的规格、技术方案、测试用例
+- [`specs/202-plugin-fs-mutate/`](../specs/202-plugin-fs-mutate/) —— fs-mutate 插件的规格、技术方案与测试用例
 - [`../dsh-plugins/README.md`](../../dsh-plugins/README.md) —— 父工程通用插件目录
 - [`../README.md`](../README.md) —— 本工程总说明中的插件约定章节
