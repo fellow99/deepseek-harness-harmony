@@ -4,6 +4,12 @@
 // that only need metadata; it performs no decoding, resizing, colour conversion,
 // or encoding, so any request that needs real pixels still fails loudly.
 //
+// Two pixel origins behave differently on purpose. 'raw().toBuffer()' is the
+// decode proof admission runs before it trusts a header, so it settles without
+// throwing and reports zero bytes. Every other terminal ('toBuffer', 'toFile',
+// 'stats') refuses with the concrete boundary that blocked it, because an empty
+// result there would be indistinguishable from a completed conversion.
+//
 // This file is embedded verbatim into both the ESM and CJS sharp entry points by
 // scripts/lib/sharp-stub.mjs. It must stay free of require, module.exports,
 // imports, backticks, and template interpolation, and its module scope must have
@@ -391,22 +397,291 @@ function stubMetadata(input) {
   }
 }
 
+// Name the concrete boundary that blocked a pixel operation. The facts come from
+// the same header parse metadata() reports, so a refusal never contradicts it.
+function stubRefusal(metadata) {
+  if (metadata.format === undefined) return 'the bytes are not a recognized PNG/JPEG/GIF/WebP container';
+  const facts = [];
+  if (metadata.width !== undefined && metadata.height !== undefined) {
+    facts.push(metadata.width + 'x' + metadata.height);
+  }
+  if (metadata.depth !== undefined) facts.push('depth=' + metadata.depth);
+  if (metadata.space !== undefined) facts.push('space=' + metadata.space);
+  if (metadata.icc !== undefined) facts.push('icc');
+  if (metadata.exif !== undefined) facts.push('exif');
+  if (metadata.orientation !== undefined) facts.push('orientation=' + metadata.orientation);
+  if (metadata.xmp !== undefined) facts.push('xmp');
+  if (metadata.iptc !== undefined) facts.push('iptc');
+  if (metadata.pages !== undefined && metadata.pages > 1) facts.push('frames=' + metadata.pages);
+  if (metadata.hasAlpha === true) facts.push('alpha');
+
+  const needs = [];
+  if (metadata.format === 'gif') needs.push('GIF stays outside the version-one image contract');
+  if (metadata.pages !== undefined && metadata.pages > 1) needs.push('animation is dropped rather than converted');
+  if (metadata.depth !== undefined && metadata.depth !== 'uchar') needs.push('16-bit or sub-8-bit samples need rescaling');
+  if (metadata.space !== undefined && metadata.space !== 'srgb') needs.push('a non-sRGB colour space needs colour management');
+  if (metadata.icc !== undefined) needs.push('an embedded ICC profile needs colour management');
+  if (metadata.exif !== undefined || metadata.xmp !== undefined || metadata.iptc !== undefined
+    || metadata.orientation !== undefined) {
+    needs.push('embedded metadata needs removal');
+  }
+  if (needs.length === 0) needs.push('the requested transform or re-encode needs the decoded raster');
+
+  return 'image/' + metadata.format + ' (' + facts.join(', ') + '): ' + needs.join('; ');
+}
+
+// A refusal, never a silent empty result: reporting success without pixels would
+// disguise a missing capability as a completed conversion.
+function stubUnsupported(operation, metadata) {
+  const error = new Error('sharp stub cannot ' + operation + ' on HarmonyOS: ' + stubRefusal(metadata)
+    + '. Decoding, resizing, colour conversion, and JPEG/WebP encoding are unavailable in the pure-JS stub.');
+  error.code = 'SHARP_STUB_UNSUPPORTED';
+  return error;
+}
+
+// A raw pixel read is the decode proof admission runs before it trusts the
+// header, so it must settle without throwing. Its empty result states that no
+// raster was produced, and no caller reads those bytes.
+function stubRawRaster() {
+  return { toBuffer: async () => Buffer.alloc(0) };
+}
+
+// The Electron bridge that reaches the platform image framework. Absent outside
+// Electron (the stub test), where every conversion falls back to a refusal.
+function stubBridge() {
+  if (typeof stubSystemPreferences === 'undefined') return undefined;
+  if (stubSystemPreferences === undefined || stubSystemPreferences === null) return undefined;
+  if (typeof stubSystemPreferences.callArkTSAsyncFunction !== 'function') return undefined;
+  return stubSystemPreferences;
+}
+
+// Whether the body can exchange temporary files with the platform bridge.
+function stubBridgeAvailable() {
+  return stubBridge() !== undefined
+    && typeof stubFs !== 'undefined'
+    && typeof stubPath !== 'undefined'
+    && typeof stubOs !== 'undefined';
+}
+
+// Concatenate byte runs into one buffer.
+function stubConcat(parts) {
+  let total = 0;
+  for (let i = 0; i < parts.length; i++) total += parts[i].length;
+  const joined = new Uint8Array(total);
+  let at = 0;
+  for (let i = 0; i < parts.length; i++) {
+    joined.set(parts[i], at);
+    at += parts[i].length;
+  }
+  return joined;
+}
+
+function stubWriteU32LE(bytes, offset, value) {
+  bytes[offset] = value & 0xff;
+  bytes[offset + 1] = (value >>> 8) & 0xff;
+  bytes[offset + 2] = (value >>> 16) & 0xff;
+  bytes[offset + 3] = (value >>> 24) & 0xff;
+}
+
+// Drop the ICC profile and comments a JPEG encoder may attach. The encoder
+// writes the profile unconditionally, and the normalization contract stores a
+// metadata-free raster, so leaving it would fail the caller's verification.
+function stubStripJpegMetadata(bytes) {
+  if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return bytes;
+  const parts = [];
+  let pending = 0;
+  let offset = 2;
+  while (offset + 4 <= bytes.length && bytes[offset] === 0xff) {
+    const marker = bytes[offset + 1];
+    if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
+      offset += 2;
+      continue;
+    }
+    const size = stubU16BE(bytes, offset + 2);
+    if (size < 2 || offset + 2 + size > bytes.length) break;
+    const end = offset + 2 + size;
+    const drop = marker === 0xfe
+      || (marker === 0xe2 && stubBytesEqual(bytes, offset + 4, 'ICC_PROFILE\u0000'));
+    if (drop) {
+      // Emit everything before this segment, then resume after it, so the run
+      // that follows a removed segment does not carry it back in.
+      parts.push(bytes.subarray(pending, offset));
+      pending = end;
+    }
+    offset = end;
+    if (marker === 0xda) break;
+  }
+  parts.push(bytes.subarray(pending));
+  return stubConcat(parts);
+}
+
+// Drop the ICCP / EXIF / XMP chunks a WebP encoder may attach, then repair the
+// RIFF size, which counts every byte after the size field itself.
+function stubStripWebpMetadata(bytes) {
+  if (bytes.length < 12 || !stubBytesEqual(bytes, 0, 'RIFF') || !stubBytesEqual(bytes, 8, 'WEBP')) return bytes;
+  const parts = [bytes.subarray(0, 12)];
+  let offset = 12;
+  while (offset + 8 <= bytes.length) {
+    const size = stubU32LE(bytes, offset + 4);
+    if (size < 0) break;
+    const padded = size + (size % 2);
+    if (offset + 8 + padded > bytes.length) break;
+    const fourCC = stubFourCC(bytes, offset);
+    if (fourCC !== 'ICCP' && fourCC !== 'EXIF' && fourCC !== 'XMP ') {
+      parts.push(bytes.subarray(offset, offset + 8 + padded));
+    }
+    offset += 8 + padded;
+  }
+  const joined = stubConcat(parts);
+  stubWriteU32LE(joined, 4, joined.length - 8);
+  return joined;
+}
+
+// Drop the ancillary text and profile chunks a PNG encoder may attach; the
+// pixel chunks are untouched.
+function stubStripPngMetadata(bytes) {
+  if (bytes.length < 8 || !stubBytesEqual(bytes, 0, '\u0089PNG\r\n\u001a\n')) return bytes;
+  const parts = [bytes.subarray(0, 8)];
+  let offset = 8;
+  while (offset + 12 <= bytes.length) {
+    const size = stubU32BE(bytes, offset);
+    if (size < 0 || size > bytes.length - offset - 12) break;
+    const end = offset + 12 + size;
+    const type = stubFourCC(bytes, offset + 4);
+    const drop = type === 'iCCP' || type === 'eXIf' || type === 'tEXt'
+      || type === 'zTXt' || type === 'iTXt';
+    if (!drop) parts.push(bytes.subarray(offset, end));
+    offset = end;
+    if (type === 'IEND') break;
+  }
+  return stubConcat(parts);
+}
+
+/** Dispatch metadata removal to the produced container. */
+function stubStripMetadata(bytes, format) {
+  if (format === 'jpeg') return stubStripJpegMetadata(bytes);
+  if (format === 'webp') return stubStripWebpMetadata(bytes);
+  if (format === 'png') return stubStripPngMetadata(bytes);
+  return bytes;
+}
+
+/**
+ * Encode one transformed image through the platform image framework.
+ * The bridge marshals only strings, so the request travels as JSON and the
+ * caller's bytes travel as a temporary file the adapter reads and replaces.
+ * The recorded transform arguments decide the outcome: resize supplies the
+ * bounds, and the chosen encoder supplies the format and quality. The returned
+ * facts are re-parsed from the cleaned bytes, so nothing depends on a dimension
+ * the adapter merely claimed.
+ */
+async function stubEncodeWithBridge(state) {
+  if (state.bytes === undefined || state.mediaType === undefined) return undefined;
+  if (!stubBridgeAvailable()) return undefined;
+  const directory = stubPath.join(stubOs.tmpdir(), 'dsh-sharp-stub');
+  stubFs.mkdirSync(directory, { recursive: true });
+  const stamp = process.pid + '-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+  const sourcePath = stubPath.join(directory, stamp + '.in');
+  const targetPath = stubPath.join(directory, stamp + '.out');
+  try {
+    stubFs.writeFileSync(sourcePath, state.bytes);
+    const request = JSON.stringify({
+      source: sourcePath,
+      target: targetPath,
+      format: state.mediaType,
+      quality: state.quality,
+      maxWidth: state.width === undefined ? 0 : state.width,
+      maxHeight: state.height === undefined ? 0 : state.height,
+    });
+    const envelope = await stubBridge().callArkTSAsyncFunction('HarmonyImage.Convert', 'string', [request]);
+    const payload = envelope !== null && typeof envelope === 'object' && 'value' in envelope
+      ? envelope.value
+      : envelope;
+    let outcome;
+    try {
+      outcome = JSON.parse(String(payload));
+    } catch (error) {
+      throw new Error('the image bridge returned an unparsable outcome: ' + String(payload));
+    }
+    if (outcome.ok !== true) throw new Error('the image bridge refused the conversion: ' + String(outcome.error));
+    const produced = stubFs.readFileSync(targetPath);
+    const producedFacts = stubMetadata(produced);
+    const cleaned = stubStripMetadata(produced, producedFacts.format);
+    const facts = stubMetadata(cleaned);
+    if (facts.format === undefined) throw new Error('the image bridge produced bytes this stub cannot identify');
+    return { data: new Uint8Array(cleaned), info: { width: facts.width, height: facts.height } };
+  } finally {
+    try { stubFs.rmSync(sourcePath, { force: true }); } catch (error) { /* best-effort cleanup */ }
+    try { stubFs.rmSync(targetPath, { force: true }); } catch (error) { /* best-effort cleanup */ }
+  }
+}
+
 function sharp(input, options) {
   const bytes = stubToBytes(input);
-  const toBuffer = async () => Buffer.alloc(0);
-  const raw = () => ({ toBuffer: toBuffer });
+  // Transform arguments are recorded rather than applied: the platform bridge
+  // performs the whole chain's work when the terminal runs.
+  const state = { bytes: bytes, width: undefined, height: undefined, mediaType: undefined, quality: undefined };
+  const refuse = (operation) => {
+    return () => {
+      throw stubUnsupported(operation, stubMetadata(bytes));
+    };
+  };
   const chain = {
     metadata: async () => stubMetadata(bytes),
-    raw: raw,
-    toBuffer: toBuffer,
-    toFile: async () => undefined,
-    stats: async () => ({ channels: 3 }),
-    info: async () => ({ format: 'png', width: 1, height: 1 }),
+    raw: () => stubRawRaster(),
+    rotate: () => proxy,
+    toColourspace: () => proxy,
+    withMetadata: () => proxy,
+    timeout: () => proxy,
+    clone: () => proxy,
+    resize: (options) => {
+      if (options !== undefined && options !== null) {
+        state.width = options.width;
+        state.height = options.height;
+      }
+      return proxy;
+    },
+    jpeg: (options) => {
+      state.mediaType = 'image/jpeg';
+      state.quality = options !== undefined && options !== null && options.quality !== undefined ? options.quality : 80;
+      return proxy;
+    },
+    webp: (options) => {
+      state.mediaType = 'image/webp';
+      state.quality = options !== undefined && options !== null && options.quality !== undefined ? options.quality : 80;
+      return proxy;
+    },
+    png: () => {
+      state.mediaType = 'image/png';
+      state.quality = 100;
+      return proxy;
+    },
+    toBuffer: async () => {
+      const encoded = await stubEncodeWithBridge(state);
+      if (encoded === undefined) throw stubUnsupported('encode pixels', stubMetadata(bytes));
+      return encoded;
+    },
+    toFile: refuse('write encoded pixels'),
+    stats: refuse('measure pixel statistics'),
+    info: async () => {
+      const metadata = stubMetadata(bytes);
+      const info = {};
+      if (metadata.format !== undefined) info.format = metadata.format;
+      if (metadata.width !== undefined) info.width = metadata.width;
+      if (metadata.height !== undefined) info.height = metadata.height;
+      return info;
+    },
   };
-  return new Proxy(chain, {
+  // Transform calls compose: every unlisted member returns the proxy, so an
+  // arbitrary chain reaches one terminal. "then" stays absent so the proxy is
+  // never mistaken for a thenable, and symbols stay absent so engine-level
+  // protocols are not answered with a function.
+  const proxy = new Proxy(chain, {
     get(target, property) {
       if (property in target) return target[property];
-      return () => chain;
+      if (typeof property === 'symbol') return undefined;
+      if (property === 'then' || property === 'catch' || property === 'finally') return undefined;
+      return () => proxy;
     },
   });
+  return proxy;
 }

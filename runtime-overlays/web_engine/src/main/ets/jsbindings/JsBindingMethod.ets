@@ -22,6 +22,7 @@ import { FileManagerAdapterBind } from '../jsbindings/FileManagerAdapterBind';
 import { FilePickerAdapterBind } from '../jsbindings/FilePickerAdapterBind';
 import { FontAdapterBind } from '../jsbindings/FontAdapterBind';
 import { I18nAdapterBind } from '../jsbindings/I18nAdapterBind';
+import { ImageAdapterBind } from '../jsbindings/ImageAdapterBind';
 import { IMFAdapterBind } from '../jsbindings/IMFAdapterBind';
 import { MediaAdapterBind } from '../jsbindings/MediaAdapterBind';
 import { MimeTypeAdapterBind } from '../jsbindings/MimeTypeAdapterBind';
@@ -63,6 +64,7 @@ export class JsBindingMethod {
     FilePickerAdapterBind.bind();
     FontAdapterBind.bind();
     I18nAdapterBind.bind();
+    ImageAdapterBind.bind();
     IMFAdapterBind.bind();
     MediaAdapterBind.bind();
     MimeTypeAdapterBind.bind();
