@@ -760,6 +760,65 @@ function installFullscreenShortcut(win) {
   });
 }
 
+// ── 状态栏（托盘）─────────────────────────────────────────────────
+// ArkTS 侧早已随上游运行时进入 HAP（module.json5 里的 StatusBarEntryAbility、
+// StatusBarManager 适配器），本轮新增的 TrayAdapter 只是它的「JSON 单入单出」门面：
+// 既有 binding 的 SetImage 有 8 个参数（含 ArrayBuffer 与函数回调），超出通用桥
+// 「≤3 参、仅原始类型」的限制，无法直接调用。
+//
+// 桥的两条硬性约束（D.2 第 7 条）：async 的 ArkTS 方法必须走 callArkTSAsyncFunction，
+// 用另一入口会永久阻塞主进程；应用被挂起时调用同样会阻塞。这里三个入口都是同步方法，
+// 且调用发生在启动期（应用必在前台），故安全。
+const TRAY_ICON_FILE = 'electron_white.png';
+const TRAY_MENU = [
+  { commandId: 1, label: '显示主窗口' },
+  { commandId: 2, label: '退出' },
+];
+
+async function installTray() {
+  try {
+    const { systemPreferences, nativeImage } = require('electron');
+    if (!systemPreferences || typeof systemPreferences.callArkTSFunction !== 'function') {
+      console.error('[dsh-harmony] 状态栏桥不可用，跳过托盘');
+      return;
+    }
+    const iconPath = join(__dirname, TRAY_ICON_FILE);
+    let icon = nativeImage.createFromPath(iconPath);
+    if (icon.isEmpty()) {
+      console.error('[dsh-harmony] 托盘图标读取失败: ' + iconPath);
+      return;
+    }
+    // 状态栏图标按 16×16 交付（2in1 高 DPI 下对应 16 逻辑像素）。
+    try {
+      icon = icon.resize({ width: 16, height: 16 });
+    } catch (e) {
+      console.error('[dsh-harmony] 托盘图标缩放失败，改用原图: ' + e.message);
+    }
+    // 送原始 BGRA_8888 像素 + 显式尺寸，而不是 PNG：运行时自带的
+    // StatusBarManagerAdapter 正是这样构造图标的（createPixelMapSync 配
+    // InitializationOptions），也是框架图标路径所依据的形态。
+    const size = icon.getSize();
+    const payload = JSON.stringify({
+      title: 'DeepSeek Harness',
+      tooltips: 'DeepSeek Harness',
+      quickOperationHeight: 100,
+      iconRawBase64: icon.toBitmap().toString('base64'),
+      iconWidth: size.width,
+      iconHeight: size.height,
+      menu: TRAY_MENU,
+    });
+    const raw = await systemPreferences.callArkTSFunction('HarmonyTray.Setup', 'string', [payload]);
+    // 桥返回标签信封 { type, value }，取 value。
+    let value = raw;
+    if (raw && typeof raw === 'object' && Object.prototype.hasOwnProperty.call(raw, 'value')) {
+      value = raw.value;
+    }
+    console.log('[dsh-harmony] 托盘安装结果: ' + String(value));
+  } catch (e) {
+    console.error('[dsh-harmony] 托盘安装异常: ' + (e && e.message ? e.message : String(e)));
+  }
+}
+
 let host = null;
 
 // 去掉 Electron 默认菜单
@@ -815,6 +874,9 @@ app.whenReady().then(async () => {
     void win.loadURL('about:blank');
     console.error('[dsh-harmony] dsh Host 启动失败，已加载兜底空白页');
   }
+
+  // 状态栏托盘：失败只记日志，不影响应用主流程。
+  await installTray();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
