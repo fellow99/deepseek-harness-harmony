@@ -20,7 +20,11 @@
 
 # 鸿蒙桌面版：sharp 已用纯 JS stub 替换（dsh-dist/node_modules/sharp/dist/），
 # attachment-local 保持启用（提供 attachments 服务，host-apiproxy 依赖）。
-# 图片校验变 no-op（不真实解码/缩略图），核心聊天/agent 功能不受影响。
+# 图片处理**不是** no-op：stub 解析容器头做准入判定；stub 自身做不了的转换
+# （16-bit / ICC / EXIF 方向 / 超限缩放）经 Node↔ArkTS 通用桥交给平台图像框架执行
+# （ImageAdapter.ets：解码 → 缩放 → EXIF 旋转 → 重编码），编码器附加的元数据由
+# stub 按容器剥离。干净的 8-bit sRGB PNG/JPEG/WebP 在限额内按字节**直通**，不做像素
+# 运算；取不到桥时（纯 Node，例如 stub 自测）退回如实拒绝。
 
 # 鸿蒙桌面版：禁用依赖原生模块（.node）的插件 —— dsh-dist 在 Windows 上收集，原生二进制为
 # win32-x64（node-pty/koffi），在鸿蒙 aarch64 上无法加载：
