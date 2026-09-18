@@ -89,6 +89,15 @@ interface TrayOutcome {
   menuItems: number;
   errorCode: number;
   message: string;
+  /**
+   * What the icon PixelMap ACTUALLY turned out to be, read back from the object
+   * that is handed to the framework. Reported because a PixelMap whose real
+   * dimensions differ from the requested ones would be marshalled with the wrong
+   * size and fail the IPC write, which is the failure being investigated.
+   */
+  iconWidth: number;
+  iconHeight: number;
+  iconBytes: number;
 }
 
 @injectable()
@@ -99,6 +108,9 @@ export class TrayAdapter extends BaseAdapter {
   private errorCode: number = 0;
   private message: string = '';
   private menuItems: number = 0;
+  private iconWidth: number = 0;
+  private iconHeight: number = 0;
+  private iconBytes: number = 0;
 
   constructor(
     @inject(ContextAdapter) ctxAdapter: ContextAdapter
@@ -135,6 +147,23 @@ export class TrayAdapter extends BaseAdapter {
       icon = this.buildIcon(request);
     } catch (err) {
       return this.fail('icon', err);
+    }
+
+    // Read back what the PixelMap ACTUALLY is. The framework marshals this object
+    // rather than the requested width/height, so a mismatch here is the first
+    // thing to look at for the "size of the pixelmap exceeds the limit" failure.
+    try {
+      const info: image.ImageInfo = icon.getImageInfoSync();
+      this.iconWidth = info.size.width;
+      this.iconHeight = info.size.height;
+      this.iconBytes = icon.getPixelBytesNumber();
+      LogUtil.info(
+        TAG,
+        `icon readback: ${this.iconWidth}x${this.iconHeight}, bytes=${this.iconBytes},`
+        + ` rowBytes=${icon.getBytesNumberPerRow()}, requested=${request.iconWidth}x${request.iconHeight}`
+      );
+    } catch (err) {
+      LogUtil.error(TAG, `icon readback failed: ${this.describe(err)}`);
     }
 
     try {
@@ -224,12 +253,28 @@ export class TrayAdapter extends BaseAdapter {
         pixelFormat: format,
         size: { width: request.iconWidth, height: request.iconHeight },
       };
-      return image.createPixelMapSync(raw.buffer as ArrayBuffer, options);
+      return image.createPixelMapSync(this.exactBuffer(raw), options);
     }
     if (request.iconBase64 !== undefined) {
       return this.decodeIcon(request.iconBase64);
     }
     throw new Error('iconRawBase64 + iconWidth/iconHeight (or iconBase64) is required');
+  }
+
+  /**
+   * Return an ArrayBuffer holding exactly the view's bytes.
+   * Base64Helper.decodeSync hands back a Uint8Array whose backing buffer can be
+   * larger than the data itself; passing that whole buffer to createImageSource
+   * or createPixelMapSync would let the decoder see trailing bytes -- exactly the
+   * kind of size mismatch this adapter must avoid, given the framework reports
+   * the failure as "the size of the pixelmap exceeds the limit".
+   * @param bytes - decoded view.
+   * @returns an ArrayBuffer of exactly bytes.byteLength.
+   */
+  private exactBuffer(bytes: Uint8Array): ArrayBuffer {
+    const copy: Uint8Array = new Uint8Array(bytes.byteLength);
+    copy.set(bytes);
+    return copy.buffer;
   }
 
   /**
@@ -240,7 +285,7 @@ export class TrayAdapter extends BaseAdapter {
   private decodeIcon(base64: string): image.PixelMap {
     const helper: util.Base64Helper = new util.Base64Helper();
     const bytes: Uint8Array = helper.decodeSync(base64);
-    const source: image.ImageSource = image.createImageSource(bytes.buffer as ArrayBuffer);
+    const source: image.ImageSource = image.createImageSource(this.exactBuffer(bytes));
     return source.createPixelMapSync();
   }
 
@@ -366,6 +411,9 @@ export class TrayAdapter extends BaseAdapter {
       menuItems: this.menuItems,
       errorCode: this.errorCode,
       message: this.message,
+      iconWidth: this.iconWidth,
+      iconHeight: this.iconHeight,
+      iconBytes: this.iconBytes,
     };
   }
 
