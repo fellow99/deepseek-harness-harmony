@@ -1,0 +1,13 @@
+{
+  "type": "hnp-config",
+  "name": "dshprobe",
+  "version": "1.0.0",
+  "install": {
+    "links": [
+      {
+        "source": "/bin/dsh-probe",
+        "target": "dsh-probe"
+      }
+    ]
+  }
+}

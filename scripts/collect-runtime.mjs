@@ -90,6 +90,8 @@ const OVERLAY_PRE_REWRITE_FILES = [
 const OVERLAY_ADD_FILES = [
   'web_engine/src/main/ets/adapter/ImageAdapter.ets',
   'web_engine/src/main/ets/jsbindings/ImageAdapterBind.ets',
+  'web_engine/src/main/ets/adapter/TrayAdapter.ets',
+  'web_engine/src/main/ets/jsbindings/TrayAdapterBind.ets',
 ];
 
 /**
