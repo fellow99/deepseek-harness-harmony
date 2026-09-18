@@ -53,8 +53,9 @@ const EXCLUDE_TOP = new Set(['build', 'oh_modules', 'node_modules', '.git', '.hv
 
 /**
  * App 配置 overlay 白名单（相对工程/目标根的镜像路径）。
- * 共 9 个，均为本 App 自身的定制：2 个 module.json5（entry 的 manifest 含后台保活声明）+
- * 1 个 Ability 源码（后台保活申请/释放）+ 快捷方式配置 + 2 个 adapter/jsbindings 定制 + 3 个 locale 资源。
+ * 共 10 个，均为本 App 自身的定制：2 个 module.json5（entry 的 manifest 含后台保活声明）+
+ * 1 个 Ability 源码（后台保活申请/释放）+ 快捷方式配置 + 3 个 adapter/jsbindings/common 定制 +
+ * 3 个 locale 资源。
  * 全部由阶段 7.6 做源/目标 md5 一致性守卫。
  */
 const OVERLAY_FILES = [
@@ -63,6 +64,7 @@ const OVERLAY_FILES = [
   'web_engine/src/main/module.json5',
   'electron/src/main/resources/base/profile/shortcuts_config.json',
   'web_engine/src/main/ets/adapter/MediaAdapter.ets',
+  'web_engine/src/main/ets/common/CommandLineAdapter.ets',
   'web_engine/src/main/ets/jsbindings/JsBindingMethod.ets',
   'web_engine/src/main/resources/base/element/string.json',
   'web_engine/src/main/resources/en_US/element/string.json',
@@ -78,6 +80,16 @@ const OVERLAY_FILES = [
  */
 const OVERLAY_PRE_REWRITE_FILES = [
   'web_engine/src/main/ets/adapter/PermissionManagerAdapter.ets',
+];
+
+/**
+ * 上游**不存在**、由本 App 新增的文件（相对目标根的镜像路径）。
+ * 与 OVERLAY_FILES 的区别：目标文件由本次拷贝创建，因此不检查其是否已存在。
+ * 全部由阶段 7.10 守卫其落地，并同样纳入 7.6 的 md5 一致性检查。
+ */
+const OVERLAY_ADD_FILES = [
+  'web_engine/src/main/ets/adapter/ImageAdapter.ets',
+  'web_engine/src/main/ets/jsbindings/ImageAdapterBind.ets',
 ];
 
 /**
@@ -272,6 +284,15 @@ function stage3ApplyOverlays() {
     cpSync(src, dest, { force: true });
     log(3, `回盖 ${rel}`);
   }
+  // 新增文件：上游没有该文件，因此不检查目标是否存在；由阶段 7.10 守卫其落地。
+  for (const rel of OVERLAY_ADD_FILES) {
+    const src = resolve(harmonyRoot, 'runtime-overlays', rel);
+    const dest = resolve(targetRoot, rel);
+    if (!existsSync(src)) fail(`新增 overlay 源缺失（App 定制丢失）: ${src}`);
+    mkdirSync(dirname(dest), { recursive: true });
+    cpSync(src, dest, { force: true });
+    log(3, `新增 ${rel}`);
+  }
 }
 
 // ---------------------------------------------------------------- 阶段 4
@@ -427,6 +448,14 @@ function stage7Guards(manifest) {
   if (manifest.libcxx?.md5) {
     const p = resolve(targetRoot, manifest.libcxx.path);
     guard(existsSync(p) && md5File(p) === manifest.libcxx.md5.toUpperCase(), `libc++_shared.so 哈希 (${manifest.libcxx.source ?? 'SDK'})`);
+  }
+
+  // 7.10 新增 overlay：上游没有这些文件，必须由阶段 3 创建且与源一致
+  for (const rel of OVERLAY_ADD_FILES) {
+    const src = resolve(harmonyRoot, 'runtime-overlays', rel);
+    const dest = resolve(targetRoot, rel);
+    const ok = existsSync(src) && existsSync(dest) && md5File(src) === md5File(dest);
+    guard(ok, `新增 overlay 落地 ${rel}`);
   }
 
   if (failed > 0) fail(`一致性守卫 ${failed} 项未通过，已中止（旧壳/错 SO/demo 污染/定制丢失风险）。`);
