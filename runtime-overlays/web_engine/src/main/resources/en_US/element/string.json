@@ -33,6 +33,18 @@
       "value": "Used to open or save files in the Desktop folder from the in-app file picker"
     },
     {
+      "name": "inherit_parent_permission",
+      "value": "Used so the bundled, signed Node runtime inherits the parent process permission for the built-in plugin marketplace to install plugins"
+    },
+    {
+      "name": "ignore_library_validation",
+      "value": "Used to load the bundled, signed Node runtime libraries and skip library validation"
+    },
+    {
+      "name": "exempt_anonymous_executable_memory",
+      "value": "Used so the bundled, signed Node runtime can allocate anonymous executable memory for JIT"
+    },
+    {
       "name": "upload_default_type_description",
       "value": "Custom file"
     },

@@ -106,7 +106,7 @@ const PRUNE_FILES = [
 ];
 
 /** resfile/resources/app 保留白名单（dsh-dist.tar.gz 在 collect-dsh 之后才存在，缺失允许） */
-const APP_KEEP = new Set(['main.js', 'renderer-preload.js', 'package.json', 'electron_white.png', 'dsh-dist.tar.gz', 'skills']);
+const APP_KEEP = new Set(['main.js', 'market-runtime.js', 'renderer-preload.js', 'package.json', 'electron_white.png', 'dsh-dist.tar.gz', 'skills']);
 
 const APP_RESFILE_DIR = 'web_engine/src/main/resources/resfile/resources/app';
 
@@ -267,8 +267,11 @@ function restoreTree(srcRel, destRel, label) {
 }
 
 function stage2RestoreAppTriple() {
-  stageBanner(2, '恢复 App 主进程三件套 + 附带技能');
+  stageBanner(2, '恢复 App 主进程文件（main.js / market-runtime.js / renderer-preload.js / package.json）+ 附带技能');
   restoreOne('src-main/main.js', `${APP_RESFILE_DIR}/main.js`, 'main.js');
+  // 011-runtime-provisioning：市场运行时引导（main.js 在启动期 require('./market-runtime.js')）。
+  // 新增的 src-main 文件**必须**在此登记，否则不会进 HAP，设备上 require 失败即主进程崩溃。
+  restoreOne('src-main/market-runtime.js', `${APP_RESFILE_DIR}/market-runtime.js`, 'market-runtime.js');
   restoreOne('src-main/renderer-preload.js', `${APP_RESFILE_DIR}/renderer-preload.js`, 'renderer-preload.js');
   restoreOne('src-main/package.json', `${APP_RESFILE_DIR}/package.json`, 'app package.json');
   restoreTree('skills', `${APP_RESFILE_DIR}/skills`, 'skills 技能目录');

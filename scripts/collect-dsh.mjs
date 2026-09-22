@@ -376,6 +376,12 @@ const HARMONY_ENSURED_PRESET_ROWS = [
     requireRow: 'tool-fs',
     reason: 'HarmonyOS: 纯 JS 内容搜索（替代依赖 subprocess 与 ripgrep 二进制的 tool-fs-search）',
   },
+  {
+    id: 'exec',
+    name: 'harmony-plugin-exec',
+    requireRow: 'tool-bash',
+    reason: 'HarmonyOS: 非 PTY 常驻 shell 命令执行（单 spawn + 哨兵行；替代依赖 node-pty 的 tool-bash）',
+  },
 ];
 
 const TOP_ROW_RE = /^- id: ([A-Za-z0-9_-]+)\s*$/;

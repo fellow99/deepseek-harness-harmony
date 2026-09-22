@@ -1,0 +1,26 @@
+{
+  "name": "harmony-plugin-exec",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DeepSeek Harness plugin: the model-facing bash command-execution tool backed by one non-PTY resident /system/bin/sh driven by a sentinel-line protocol, with a best-effort token-level path fence",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js"
+  },
+  "files": [
+    "lib",
+    "README.md",
+    "README_zh.md"
+  ],
+  "scripts": {
+    "test": "node --test tests/*.test.mjs"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/dsh-fs": "*",
+    "@deepseek-ai/dsh-sandbox": "*",
+    "@deepseek-ai/dsh-tools": "*",
+    "@deepseek-ai/schemastery": "*"
+  }
+}

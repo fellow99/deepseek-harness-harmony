@@ -49,9 +49,11 @@
 |---|---|---|
 | [`harmony-plugin-fs-mutate`](./harmony-plugin-fs-mutate/) | `delete`、`move`、`copy`、`chmod` | [`dsh-fs-remove-primitive.patch`](../patches/dsh-v0.1.5-rc.2/dsh-fs-remove-primitive.patch)（`ctx.fs.remove`）、[`dsh-fs-write-bytes.patch`](../patches/dsh-v0.1.5-rc.2/dsh-fs-write-bytes.patch)（`ctx.fs.writeBytes`，供 `copy`/`move` 按字节搬运）、[`dsh-fs-chmod-primitive.patch`](../patches/dsh-v0.1.5-rc.2/dsh-fs-chmod-primitive.patch)（`ctx.fs.chmod`） |
 | [`harmony-plugin-fs-search`](./harmony-plugin-fs-search/) | `grep`、`glob` | 无（纯 JavaScript 实现，仅使用既有的 `ctx.fs` seam，不依赖本工程任何补丁） |
+| [`harmony-plugin-exec`](./harmony-plugin-exec/) | `bash` | 无（非 PTY 常驻 `/system/bin/sh` + 哨兵行协议；仅复用 `@deepseek-ai/dsh-sandbox` 的升级语义，不依赖本工程补丁，也不重新启用上游 `tool-bash`） |
 
 ## 五、相关文档
 
 - [`specs/202-plugin-fs-mutate/`](../specs/202-plugin-fs-mutate/) —— fs-mutate 插件的规格、技术方案与测试用例
+- [`specs/010-tool-bash/`](../specs/010-tool-bash/) —— exec 插件（`bash` 工具）的规格、技术方案、任务与测试用例
 - [`../dsh-plugins/README.md`](../../dsh-plugins/README.md) —— 父工程通用插件目录
 - [`../README.md`](../README.md) —— 本工程总说明中的插件约定章节
