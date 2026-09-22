@@ -17,6 +17,7 @@ const { createGunzip } = require('node:zlib');
 const { join, dirname, delimiter } = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { networkInterfaces } = require('node:os');
+const { setupMarketRuntime } = require('./market-runtime.js');
 
 // ── 启动 loading 页 ─────────────────────────────────────────────────
 // 首次启动解压 dsh-dist.tar.gz 耗时较长（~45s），期间用内联 loading 页提示用户等待初始化。
@@ -216,6 +217,12 @@ const HARMONY_ENSURED_PRESET_ROWS = [
     name: 'harmony-plugin-fs-search',
     requireRow: 'tool-fs',
     reason: 'HarmonyOS: 纯 JS 内容搜索（替代依赖 subprocess 与 ripgrep 二进制的 tool-fs-search）',
+  },
+  {
+    id: 'exec',
+    name: 'harmony-plugin-exec',
+    requireRow: 'tool-bash',
+    reason: 'HarmonyOS: 非 PTY 常驻 shell 命令执行（单 spawn + 哨兵行；替代依赖 node-pty 的 tool-bash）',
   },
 ];
 
@@ -470,6 +477,11 @@ async function startHost() {
   ensureDesktopProfile(process.env.DSH_HOME);
   ensureDshMarketProfileLink(process.env.DSH_HOME);
   ensureDshPluginsProfileLink(process.env.DSH_HOME);
+  // 011-runtime-provisioning：运行时供给（探测 A/B/C → 校验 → 生成 dsh shim → 前置 PATH / 设 PNPM_HOME）。
+  // 时序约束：晚于 ensureDshExtracted()（DSH_ROOT 就位，shim 指向 DSH_ROOT/lib/bin.js）与
+  // ensureSandboxHome()（HOME 已指向沙箱目录）；早于 runProfile()（dshmarket 的 spawnEnv() 在调用时读
+  // process.env.PATH）。失败仅影响市场安装通道，不阻塞启动。
+  setupMarketRuntime({ dshRoot: DSH_ROOT });
   // 用户目录写入白名单：必须在 runProfile 之前设置，writableRoots 每次围栏判定都读它。
   installExtraWritableRoots();
   process.env.DSH_DISABLE_HMR = '1';

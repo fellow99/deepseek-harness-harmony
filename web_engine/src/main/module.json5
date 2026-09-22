@@ -41,6 +41,36 @@
         "name": "ohos.permission.kernel.ALLOW_WRITABLE_CODE_MEMORY"
       },
       {
+        "name": "ohos.permission.INHERIT_PARENT_PERMISSION",
+        "reason": "$string:inherit_parent_permission",
+        "usedScene": {
+          "abilities": [
+            "EntryAbility"
+          ],
+          "when":"inuse"
+        }
+      },
+      {
+        "name": "ohos.permission.kernel.IGNORE_LIBRARY_VALIDATION",
+        "reason": "$string:ignore_library_validation",
+        "usedScene": {
+          "abilities": [
+            "EntryAbility"
+          ],
+          "when":"inuse"
+        }
+      },
+      {
+        "name": "ohos.permission.kernel.EXEMPT_ANONYMOUS_EXECUTABLE_MEMORY",
+        "reason": "$string:exempt_anonymous_executable_memory",
+        "usedScene": {
+          "abilities": [
+            "EntryAbility"
+          ],
+          "when":"inuse"
+        }
+      },
+      {
         "name": "ohos.permission.GYROSCOPE"
       },
       {
