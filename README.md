@@ -65,8 +65,11 @@ Key point: **the renderer loads same-origin — zero CORS, zero auth, zero custo
 - ✅ Plugin marketplace (dsh-market built-in)
 - ✅ Window state persistence (maximized / bounds restored) + F11 fullscreen toggle
 - ⚠️ Image attachments (sharp is replaced by a pure-JS stub that parses PNG/JPEG/GIF/WebP container headers; any conversion the stub cannot perform itself is routed through the platform image framework by an ArkTS bridge — decode, EXIF orientation, scale, and re-encode to JPEG/WebP/PNG. Already-clean 8-bit sRGB PNG/JPEG/WebP inside the limits still pass through byte-identically and cost no conversion. When no bridge is reachable — plain Node, such as the stub's own test — every conversion is refused with an explicit, attributed error. No thumbnails.)
-- ❌ Terminal (bash tool, node-pty has no aarch64 artifact)
+- ✅ Command execution — the `bash` tool (plugin `harmony-plugin-exec`): a **non-PTY resident `/system/bin/sh`** driven by a sentinel-line protocol, plus a tool-layer path fence. Verified on device; the upstream `tool-bash` row stays disabled (`node-pty` has no aarch64 artifact, and PTY is denied by SELinux). ⚠️ The fence is **best-effort and bypassable — not a sandbox**; see the plugin README's Known Limitations.
 - ❌ Process sandbox (koffi / landlock)
+- ⛔ **Bundling our own Node / pnpm / python runtime — NOT POSSIBLE for this project.** Shipping an ELF requires a **binary certificate** (AGC `certType: 4`), and Huawei **does not grant it to individual developers** (it needs an enterprise entity, applied for through the online work-order system).
+  - **0.1.5 decision (2026-09-22): take "route 1" — the host installs `pnpm`, and this app makes NO AppGallery commitment for this capability.** Concretely: the app already sees `/data/service/hnp/bin` on its `PATH` and a structurally valid `node` lives there — only `pnpm` is missing. Once the user installs `pnpm` **from the system terminal** (the symlink ban is app-domain-only, so it must NOT be installed from within the app), the marketplace's `probePnpm()` succeeds and plugin install/uninstall works. It is treated as an **optional dependency, never a product capability** — do not advertise it.
+  - Nothing else in the MVP depends on a bundled runtime: command execution spawns the **system's own** `sh`/toybox, and the file/search/skill/subagent/workflow/image features are pure JS. Analysis: [`docs/鸿蒙环境能力清单-v0.1.5.md`](docs/鸿蒙环境能力清单-v0.1.5.md) §C.8.
 
 (Phase 2: system tray, frameless window, launch at login; native file picker reuses dsh's standard frontend directory browser)
 
