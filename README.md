@@ -71,7 +71,7 @@ Key point: **the renderer loads same-origin — zero CORS, zero auth, zero custo
   - **0.1.5 decision (2026-09-22): take "route 1" — the host installs `pnpm`, and this app makes NO AppGallery commitment for this capability.** Concretely: the app already sees `/data/service/hnp/bin` on its `PATH` and a structurally valid `node` lives there — only `pnpm` is missing. Once the user installs `pnpm` **from the system terminal** (the symlink ban is app-domain-only, so it must NOT be installed from within the app), the marketplace's `probePnpm()` succeeds and plugin install/uninstall works. It is treated as an **optional dependency, never a product capability** — do not advertise it.
   - Nothing else in the MVP depends on a bundled runtime: command execution spawns the **system's own** `sh`/toybox, and the file/search/skill/subagent/workflow/image features are pure JS. Analysis: [`docs/鸿蒙环境能力清单-v0.1.5.md`](docs/鸿蒙环境能力清单-v0.1.5.md) §C.8.
 
-(Phase 2: system tray, frameless window, launch at login; native file picker reuses dsh's standard frontend directory browser)
+(Phase 2: frameless window and launch at login. Both were evaluated and rejected — hiding the system title bar (`window.setWindowDecorVisible`) is available and needs no permission, but it moves window controls into the renderer at a cost the benefit does not justify (#28b); `autoStartupManager` exposes only read-only queries with no public enable API, so guiding the user to system Settings is the only route (#28d). The system tray ships today (status-bar icon + right-click menu), and the native file picker reuses dsh's standard frontend directory browser.)
 
 ## Target platforms & distribution
 

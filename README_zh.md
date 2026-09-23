@@ -65,10 +65,13 @@ dsh 已完成 **Host/Client 分层**，其 webserver **同时服务 SPA dist 与
 - ✅ 插件市场（dsh-market 内置）
 - ✅ 窗口状态持久化（最大化/位置尺寸）+ F11 全屏
 - ⚠️ 图片附件（sharp 由纯 JS stub 替代：按 PNG/JPEG/GIF/WebP 容器头解析 metadata；stub 自身做不了的转换改由 ArkTS 桥调用平台图像框架完成 —— 解码、EXIF 方向、缩放、并重新编码为 JPEG/WebP/PNG。限额内且本就干净的 8-bit sRGB PNG/JPEG/WebP 仍按字节原样通过、不付出转换。取不到桥时（纯 Node，例如 stub 自测）每次转换都如实拒绝并注明边界。无缩略图。）
-- ❌ 终端（bash 工具，node-pty 无 aarch64 产物）
+- ✅ 命令执行 —— `bash` 工具（插件 `harmony-plugin-exec`）：**非 PTY 的常驻 `/system/bin/sh`**，由哨兵行协议驱动，外加工具层路径围栏。已真机验证；上游 `tool-bash` 行仍保持 disabled（`node-pty` 无 aarch64 产物，且 PTY 被 SELinux 拒绝）。⚠️ 围栏为 **best-effort、可被绕过 —— 不是沙箱**；见该插件 README 的 Known Limitations。
 - ❌ 进程沙箱（koffi / landlock）
+- ⛔ **随包自带 Node / pnpm / python 运行时 —— 本工程不可实现。** 分发 ELF 需要**二进制证书**（AGC `certType: 4`），而华为**不授予个人开发者**（需企业实体，经在线工单系统申请）。
+  - **0.1.5 决策（2026-09-22）：走「路线一」—— 由主机安装 `pnpm`，本应用对该能力不作 AppGallery 上架承诺。** 具体：应用已能在 `PATH` 上看到 `/data/service/hnp/bin`，那里存在结构校验通过的 `node`，只缺 `pnpm`。用户在**系统终端**装好 `pnpm` 后（symlink 禁令仅限应用域，故**不得**在应用内安装），市场的 `probePnpm()` 即通过，插件安装/卸载可用。该能力按**可选依赖**对待、**绝不作为产品能力** —— 不要对外宣传。
+  - MVP 其余能力都不依赖自带运行时：命令执行 spawn 的是**系统自带**的 `sh`/toybox，文件/搜索/技能/子 agent/workflow/图片均为纯 JS。分析见 [`docs/鸿蒙环境能力清单-v0.1.5.md`](docs/鸿蒙环境能力清单-v0.1.5.md) §C.8。
 
-（二期：系统托盘、无边框窗口、开机自启；原生文件选择器复用 dsh 标准前端目录浏览）
+（二期：无边框窗口与开机自启。两者均经评估后放弃 —— 隐藏系统标题栏（`window.setWindowDecorVisible`）已就绪且无需权限，但会把窗口控制移到渲染层，代价与收益不成比例（#28b）；`autoStartupManager` 只提供只读查询、无公开启用接口，唯一路径是引导用户在系统设置中手动开启（#28d）。系统托盘已交付（状态栏图标 + 右键菜单），原生文件选择器复用 dsh 标准前端目录浏览。）
 
 ## 目标平台与分发
 
