@@ -158,6 +158,58 @@ if ($Task -eq 'App') {
     }
 }
 
+# --- 6.5 自动嵌入 HNP（模块声明了 hnpPackages 时） -----------------------------
+# 背景：module.json 一旦声明 hnpPackages，系统安装器在 HAP 未实际携带该原生包时
+# 会以 code 9568409「extract of the native package failed」整体失败；而 hvigor 产不出
+# HNP（PackingToolOptions 无 addHnpPath），只能在签名前用 inject-hnp.ps1 重打包 + 重签。
+# 这里自动补上这一步，并先清掉上一轮的 *-hnp.hap，避免误装陈旧产物。
+# 不带 HNP 的 *-signed.hap 仍然产出，但它装不上，故不作为装机产物。
+$hnpArtifact = $null
+$declaresHnp = $false
+if ($Task -eq 'Hap') {
+    $modJson = Join-Path $projectRoot 'electron\build\default\intermediates\package\default\module.json'
+    if (Test-Path -LiteralPath $modJson) {
+        $declaresHnp = [bool](Select-String -LiteralPath $modJson -Pattern '"hnpPackages"\s*:' -Quiet)
+    }
+} else {
+    # App Pack 内层 HAP 同样受该声明约束；.app 级的注入尚未自动化，这里只做响亮提醒。
+    $appModJson = Join-Path $projectRoot 'electron\build\default\intermediates\package\default\module.json'
+    if (Test-Path -LiteralPath $appModJson) {
+        $declaresHnp = [bool](Select-String -LiteralPath $appModJson -Pattern '"hnpPackages"\s*:' -Quiet)
+    }
+}
+
+if ($declaresHnp -and $Task -ne 'Hap') {
+    Write-Host ""
+    Write-Host "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" -ForegroundColor Yellow
+    Write-Host "!!  模块声明了 hnpPackages，但本次是 -Task App：HNP 自动嵌入只覆盖 HAP。" -ForegroundColor Yellow
+    Write-Host "!!  内层 HAP 未携带 .hnp 时，该 .app 安装/上架同样会以 9568409 失败。" -ForegroundColor Yellow
+    Write-Host "!!  提交前必须先对构建出的 HAP 跑 scripts\inject-hnp.ps1 再重打 App Pack。" -ForegroundColor Yellow
+    Write-Host "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" -ForegroundColor Yellow
+}
+
+if ($declaresHnp -and $Task -eq 'Hap') {
+    $hnpRoot = Join-Path $projectRoot 'electron\hnp'
+    $hnpPayload = @(Get-ChildItem -LiteralPath $hnpRoot -Recurse -File -Filter '*.hnp' -ErrorAction SilentlyContinue)
+    if (-not $hnpPayload) {
+        throw "module.json 声明了 hnpPackages，但 $hnpRoot 下没有 .hnp —— 该 HAP 装上会以 9568409 失败（先补 .hnp 载荷）。"
+    }
+    $hnpOutDir = Join-Path $projectRoot 'electron\build\default\outputs\default'
+    Get-ChildItem -Path $hnpOutDir -Filter '*-hnp.hap' -ErrorAction SilentlyContinue | ForEach-Object {
+        Write-Host "[hnp] 清理陈旧产物 $($_.Name)"
+        Remove-Item -LiteralPath $_.FullName -Force
+    }
+    Write-Host "`n=== 自动嵌入 HNP（inject-hnp.ps1，载荷 $($hnpPayload.Count) 个 .hnp） ===" -ForegroundColor Green
+    & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'inject-hnp.ps1') `
+        -BuildMode $BuildMode -JbrHome $JbrHome -SdkHome $SdkHome
+    if ($LASTEXITCODE -ne 0) { throw "inject-hnp.ps1 失败（exit $LASTEXITCODE）" }
+    $hnpArtifact = Join-Path $hnpOutDir 'electron-default-signed-hnp.hap'
+    if (-not (Test-Path -LiteralPath $hnpArtifact)) { throw "inject-hnp 未产出：$hnpArtifact" }
+    $hnpSize = [math]::Round((Get-Item -LiteralPath $hnpArtifact).Length / 1MB, 1)
+    Write-Host "`n✅ 装机产物（含 HNP）：$hnpArtifact ($hnpSize MB)" -ForegroundColor Green
+    Write-Host "   hdc app install -r `"$hnpArtifact`"" -ForegroundColor Green
+}
+
 # --- 7. 产物签名断言：内嵌 Profile 的 type 必须与 -SignMode 一致 ----------------
 # 背景：本项目曾出现「release 构建被静默用 debug 材料签名」——构建成功但产物无法上架。
 # 这里用 SDK 自带的 hap-sign-tool verify-app 解出产物内嵌 provisioning profile 的 type 做硬校验。
@@ -206,7 +258,11 @@ if ($Task -eq 'App') {
         Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if ($assertApp) { $assertArtifact = $assertApp.FullName }
 } else {
-    $assertHap = Join-Path $projectRoot 'electron\build\default\outputs\default\electron-default-signed.hap'
+    # 断言装机产物：有 HNP 时断它（那才是实际安装的包），否则退回不带 HNP 的产物。
+    $assertHap = Join-Path $projectRoot 'electron\build\default\outputs\default\electron-default-signed-hnp.hap'
+    if (-not (Test-Path -LiteralPath $assertHap)) {
+        $assertHap = Join-Path $projectRoot 'electron\build\default\outputs\default\electron-default-signed.hap'
+    }
     if (Test-Path -LiteralPath $assertHap) { $assertArtifact = $assertHap }
 }
 
