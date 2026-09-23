@@ -7,13 +7,15 @@
  * shebang 假设破裂（B3）。本模块按 `specs/011-runtime-provisioning/spec.md` §4.3 的**有序**规则
  * 探测并采用下列机制（**禁跳级**）：
  *
- *   - **路径 A（主路径）**：随包携带、经二进制证书签名的 Node ELF，以 public HNP 分发，系统
- *     installer 在 `/data/service/hnp/bin` 创建 `node`/`pnpm` 软链接（**系统上下文，B1 不适用**）。
- *     ⚠️ **路径 A 被 AGC「二进制证书」工单阻塞**（AGC `certType: 4`；见 `docs/ACL申请清单-v2.md`
- *     的 A1 项与 `spec.md` §4.4）。证书未到手时路径 A 必然探测失败，这是**预期**行为，不是缺陷。
- *   - **路径 B（过渡 / 兜底）**：进程内运行 pnpm 的 JavaScript —— **零 ELF、零 symlink、零证书**，
- *     一次绕过 B0/B1/B2/B3。本引导只做「pnpm JS 是否随包就位」的检测并记录；真正的进程内调用
- *     由 `dsh-market` 的进程内补丁承担（`plan.md` §11，尚未落地）。
+ *   - **路径 A（原主路径，**0.1.5 已撤回**）**：随包携带、经二进制证书签名的 Node ELF，以 public HNP
+ *     分发，系统 installer 在 `/data/service/hnp/bin` 创建 `node`/`pnpm` 软链接（**系统上下文，B1 不适用**）。
+ *     ⛔ **已撤回**：其前置的 AGC **二进制证书**（`certType: 4`）**对个人开发者不可得**（需企业实体），
+ *     故本工程当前主体下不可实现。`docs/ACL申请清单-v2.md` A1、`docs/鸿蒙环境能力清单-v0.1.5.md` §C.8。
+ *     探测仍保留（一旦将来具备资质或设备经 HNP 提供 node+pnpm，本路径可用），但**不得再视为计划项**。
+ *   - **路径 B（暂缓）**：进程内运行 pnpm 的 JavaScript —— **零 ELF、零 symlink、零证书**，
+ *     一次绕过 B0/B1/B2/B3。它是唯一「免证书且自包含」的路线，将来若要让「市场一键装插件」
+ *     成为**可上架承诺**，只有它可行。本引导只做「pnpm JS 是否随包就位」的检测并记录；真正的进程内
+ *     调用由 `dsh-market` 的进程内补丁承担（`plan.md` §11，**本版未投入**）。
  *   - **路径 C（机会性兜底）**：复用设备上第三方应用已装的 Node。**仅机会性**，绝不作为产品能力；
  *     结果带 `source: 'device-environment'` 标记，UI / 日志必须标注「复用了设备环境运行时，非本
  *     应用保障」。不通过 `node -e` 探针即视为不可用（现设备 `node -e` 无输出，`未验证`）。
@@ -324,7 +326,7 @@ function expandHome(dir, home, platform = process.platform) {
 
 /** 选中路径的说明文案。 */
 function pathLabel(pathId) {
-  if (pathId === 'A') return '随包携带的签名 Node ELF（public HNP，主路径）';
+  if (pathId === 'A') return '随包携带的签名 Node ELF（public HNP）—— ⛔ 0.1.5 已撤回（二进制证书对个人开发者不可得）';
   if (pathId === 'B') return '进程内运行 pnpm JS（过渡路径，零 ELF / 零 symlink / 零证书）';
   if (pathId === 'C') return '复用设备第三方 Node（机会性兜底）';
   return '未采用任何路径';
@@ -424,7 +426,7 @@ function discoverMarketRuntime(deps) {
   const nodeName = isWin32(platform) ? 'node.exe' : 'node';
   const pnpmName = isWin32(platform) ? 'pnpm.exe' : 'pnpm';
 
-  // ── 路径 A：HNP 提供的签名 Node 工具链（主路径） ─────────────────────
+  // ── 路径 A：HNP 提供的签名 Node 工具链（⛔ 0.1.5 已撤回，探测保留以备将来） ──────────
   const hnpHome = deps.hnpPublicHome ?? env.HNP_PUBLIC_HOME ?? DEFAULT_HNP_PUBLIC_HOME;
   const hnpBin = joinPath(platform, hnpHome, 'bin');
   const aNode = joinPath(platform, hnpBin, nodeName);
@@ -434,7 +436,7 @@ function discoverMarketRuntime(deps) {
   diagnostics.push(
     `路径 A（HNP 签名 Node）：node=${aNode} ${aNodeOk ? '结构校验通过' : '缺失或校验失败'}；`
     + `pnpm=${aPnpm} ${aPnpmOk ? '结构校验通过' : '缺失或校验失败'}；`
-    + '其前置 AGC 二进制证书工单未完成时本项必然失败，属预期（docs/ACL申请清单-v2.md A1、spec §4.4）',
+    + '其前置 AGC 二进制证书**对个人开发者不可得**，故此项**已撤回**（AGC certType: 4，需企业实体；见 docs/ACL申请清单-v2.md A1 与 docs/鸿蒙环境能力清单-v0.1.5.md §C.8）',
   );
   if (aNodeOk && aPnpmOk) {
     return successResult('A', {
@@ -502,9 +504,10 @@ function discoverMarketRuntime(deps) {
   // ── 规则 4：显式失败（fail-visible，不阻塞应用启动） ─────────────────
   diagnostics.push('全部候选不可用：按 spec §4.3 规则 4 显式失败（仅市场安装通道受影响）');
   const reason = '市场安装通道不可用：'
-    + '路径 A 未就位（HNP 的 node/pnpm 缺失或结构校验失败；其前置 AGC 二进制证书工单见 docs/ACL申请清单-v2.md A1）；'
+    + '路径 A 已撤回（二进制证书对个人开发者不可得，AGC certType: 4 需企业实体 —— docs/ACL申请清单-v2.md A1、docs/鸿蒙环境能力清单-v0.1.5.md §C.8）；'
     + '路径 B 未就位（dsh-dist 下未物化 pnpm JS，需 collect-dsh 物化）；'
-    + '路径 C 不可用（设备第三方 node/pnpm 缺失，或 node -e 探针不通过）';
+    + '路径 C 不可用（设备第三方 node/pnpm 缺失，或 node -e 探针不通过）'
+    + ' —— 【0.1.5 策略】采用路径 C（路线一）：请在**系统终端**（u:r:sh:s0，勿在应用域）把 `pnpm` 装进应用 PATH 可见的目录（首选 /data/service/hnp/bin，其中 node 已就位）；完成后本通道即打通。**本能力为可选依赖，不作上架承诺**（docs/鸿蒙环境能力清单-v0.1.5.md §C.8.7、spec §4.2）';
   return failureResult(binDir, reason, diagnostics);
 }
 

@@ -48,6 +48,25 @@ What this means in practice:
   `curl` is not a toybox applet in the OpenHarmony standard set. Some applets are gated by a
   build flag and are **未验证** (`awk`, `wget`, `diff`, `expr`), and GNU-only tools (`bash`,
   `busybox`, `vi`, `strace`) do **not** exist. Confirm a doubtful applet with `toybox --long`.
+- The shell behind `bash` is **`/system/bin/sh`, which is mksh R59 — not toysh** (device-verified
+  2026-09-22). Exactly these names are intercepted by the shell and therefore do **not** run the
+  toybox applet: **builtins** `cat echo false kill pwd realpath sleep test true ulimit`, plus the
+  **reserved word** `time`. Write `toybox <name>` to force the toybox implementation. Notably
+  `printf`, `ls`, `grep`, `sed` are **not** intercepted — those still run toybox.
+  Do **not** infer the shell from `readlink /proc/self/exe` (it misreports `/system/bin/toybox`) or
+  from `uname -a` (its trailing `Toybox` is a kernel string).
+- **Some `/system/bin` names are broken or belong to other programs.** 42 names are **dangling
+  symlinks** to `toybox` whose applet is not compiled (they fail with `toybox: Unknown command`) —
+  e.g. `acpi arch ascii bunzip2 bzcat chattr chrt devmem halt hwclock i2c* …` and `poweroff`.
+  Judge availability with `toybox <name> --help`, never with `ls`/`command -v`. Four symlinks point
+  at **other** programs (`reboot`/`service_control` → `begetctl`, `resize.f2fs`/`sload.f2fs` →
+  `fsck.f2fs`) — `reboot` really reboots the device, so never invoke unrecognised names.
+- **`command -v <name>` does not return a path here.** mksh ships 130 identity aliases
+  (`alias cat=cat`), so `command -v cat` prints `alias cat=cat`. Use `type`, `whence -v`, or the
+  `toybox <name>` form instead.
+- The extended applet set IS compiled on this device (`toybox_extended_cmd` is enabled): `awk`,
+  `wget`, `diff`, `expr`, `tr`, `telnet`, `traceroute`, `traceroute6`, `getfattr`, `ipcs` are all
+  directly usable. Full per-command evidence: `docs/toybox命令清单.md`.
 - State persists: `cd` and shell variables carry over between `bash` calls. There is no per-call
   `workdir` parameter.
 - There is **no TTY**, so interactive programs (editors, pagers, `top`) are unsupported and

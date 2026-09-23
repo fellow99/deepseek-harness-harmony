@@ -10,8 +10,8 @@
 'use strict';
 const { app, BrowserWindow, Menu, screen } = require('electron');
 const {
-  cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync,
-  writeSync, openSync, closeSync, createReadStream,
+  accessSync, constants, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync,
+  writeFileSync, writeSync, openSync, closeSync, createReadStream,
 } = require('node:fs');
 const { createGunzip } = require('node:zlib');
 const { join, dirname, delimiter } = require('node:path');
@@ -633,12 +633,19 @@ function installExtraWritableRoots() {
   // 白名单**不按存在性过滤**：READ_WRITE_*_DIRECTORY 是 normal 权限，首次访问才弹窗授予，启动瞬间
   // stat 可能失败 —— 若据此把目录排除，用户随后授权的目录会被漏掉，E2 静默失效。多列出的路径在围栏
   // 里匹配不到任何目标，无害。存在性只用于日志，便于真机排查。
-  const reachable = candidates.filter((dir) => {
-    try { return existsSync(dir); } catch { return false; }
+  // 日志按**可写（W_OK）**判定，而不是存在性：这三个目录的 mode 是 2771（属主 file_manager），
+  // 系统未授权时应用落在 "other"（只有 --x），existsSync / access(X_OK) 照样为真 —— 旧日志因此会
+  // 打印「可达」，而实际读写全是 EPERM/EACCES，把「能力已可用」误报成真（真机实测 2026-09-22）。
+  const writable = candidates.filter((dir) => {
+    try { accessSync(dir, constants.W_OK); return true; } catch { return false; }
   });
   process.env.DSH_EXTRA_WRITABLE_ROOTS = candidates.join(delimiter);
+  const notWritable = candidates.length - writable.length;
   console.log('[dsh-harmony] DSH_EXTRA_WRITABLE_ROOTS =', process.env.DSH_EXTRA_WRITABLE_ROOTS,
-    '| 启动时可达:', reachable.length > 0 ? reachable.join(', ') : '(均不可达，用户目录权限可能尚未授予)');
+    '| 启动时可写:', writable.length > 0 ? writable.join(', ') : '(均不可写)',
+    notWritable > 0
+      ? `| ${notWritable}/${candidates.length} 不可写：请在「设置 → 应用 → 本应用 → 允许访问」授予桌面/文档/下载权限，然后重启应用`
+      : '');
 }
 ensureSandboxHome();
 
@@ -782,9 +789,12 @@ function installFullscreenShortcut(win) {
 // 用另一入口会永久阻塞主进程；应用被挂起时调用同样会阻塞。这里三个入口都是同步方法，
 // 且调用发生在启动期（应用必在前台），故安全。
 const TRAY_ICON_FILE = 'electron_white.png';
+// 只放应用自己的动作。PC 状态栏对托盘图标的右键菜单**本就自带一个「退出」**，
+// 再放一个就会出现两个「退出」（真机实测：干净重启后 `tray installed, menu items: 2`
+// 即本文件的两项，而 sceneboard/SYS_UI 的 `TrayManager: updateAppTrayInfo2` 另行合成托盘项）。
+// 退出交给平台项；适配器侧因此也不再保留 quit 命令。
 const TRAY_MENU = [
   { commandId: 1, label: '显示主窗口' },
-  { commandId: 2, label: '退出' },
 ];
 
 async function installTray() {

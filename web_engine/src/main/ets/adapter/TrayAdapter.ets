@@ -33,9 +33,15 @@ const MAIN_ABILITY: string = 'EntryAbility';
 /** The statusBarView extension ability declared in module.json5. */
 const STATUS_BAR_VIEW_ABILITY: string = 'StatusBarEntryAbility';
 
-/** Menu commands the tray understands, mirroring what the caller sends. */
+/**
+ * Menu commands the tray understands, mirroring what the caller sends.
+ *
+ * There is deliberately no quit command. The PC status bar already renders its
+ * own 「退出」 item for a tray icon, so an app-supplied one makes the menu show
+ * two; the exit path therefore belongs to the platform, and this adapter owns
+ * only the action the platform cannot know about.
+ */
 const CMD_SHOW_WINDOW: number = 1;
-const CMD_QUIT: number = 2;
 
 /** One context-menu node, as sent by the caller. */
 interface MenuNode {
@@ -356,8 +362,6 @@ export class TrayAdapter extends BaseAdapter {
     }
     if (command === CMD_SHOW_WINDOW) {
       this.showMainWindow();
-    } else if (command === CMD_QUIT) {
-      this.quit();
     }
   }
 
@@ -381,24 +385,6 @@ export class TrayAdapter extends BaseAdapter {
       });
     } catch (err) {
       LogUtil.error(TAG, `showMainWindow failed: ${this.describe(err)}`);
-    }
-  }
-
-  /**
-   * End the whole application. Electron lives in the same process group as the
-   * abilities, so killing every process is a real quit rather than a window close.
-   */
-  private quit(): void {
-    try {
-      const context: common.Context | undefined = this.ctxAdapter.getActiveContext();
-      if (context === undefined) {
-        return;
-      }
-      context.getApplicationContext().killAllProcesses().catch((err: BusinessError) => {
-        LogUtil.error(TAG, `killAllProcesses failed: ${err.message}`);
-      });
-    } catch (err) {
-      LogUtil.error(TAG, `quit failed: ${this.describe(err)}`);
     }
   }
 
