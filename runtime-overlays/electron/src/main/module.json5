@@ -25,21 +25,6 @@
         "value": ""
       }
     ],
-    // HNP（T3）：把 CLI 载荷作为 public 原生包随 HAP 分发。安装后落在
-    // /data/service/hnp/<name>.org/<name>_<version>，其 bin 软链接目录已默认加入 PATH，
-    // 因此用户可在系统终端直接按命令名调用。该字段**仅 entry 模块**支持。
-    //
-    // ⚠️ 必须与真正嵌入的 .hnp 同时生效：安装器看到该声明后会去 HAP 里找原生包，
-    // 找不到即整包安装失败（实测 code:9568409 "extract of the native package failed"）。
-    // hvigor 的 PackingToolOptions **没有** addHnpPath（源码级确认），从不发出 --hnp-path，
-    // 故嵌入由 scripts/inject-hnp.ps1 在签名前完成（复现 hvigor 的打包参数 + --hnp-path，
-    // 再用 hap-sign-tool 重签）。构建顺序见该脚本头部注释。
-    "hnpPackages": [
-      {
-        "package": "dshprobe.hnp",
-        "type": "public"
-      }
-    ],
     "abilities": [
       {
         "name": "EntryAbility",

@@ -1,5 +1,0 @@
-#!/system/bin/sh
-# T3 HNP pipeline probe: proves a public HNP is reachable from the system terminal.
-echo "DSH_HNP_PROBE_OK"
-echo "HNP_PUBLIC_HOME=$HNP_PUBLIC_HOME"
-echo "argv0=$0"
