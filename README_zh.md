@@ -50,7 +50,7 @@ dsh 已完成 **Host/Client 分层**，其 webserver **同时服务 SPA dist 与
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-关键点：**渲染进程同源加载——零 CORS、零鉴权、零自定义协议、零 IPC 载体**——复用 dsh 现有 `WebApiClient`（HTTP 上行 + WebSocket 下行），**对 dsh 零上游改动**（仅 13 个 patch）。
+关键点：**渲染进程同源加载——零 CORS、零鉴权、零自定义协议、零 IPC 载体**——复用 dsh 现有 `WebApiClient`（HTTP 上行 + WebSocket 下行），**对 dsh 零上游改动**（仅 14 个 patch）。
 
 **与 desktop 的差异**（鸿蒙独有适配，详见 `docs/工程规划.md` §18）：
 
@@ -93,9 +93,9 @@ dsh 已完成 **Host/Client 分层**，其 webserver **同时服务 SPA dist 与
 - **同源数据面**：渲染进程 `loadURL(http://<局域网 IP>:<port>/)` 同源加载 dsh Web UI，复用 `WebApiClient`——零 CORS、零鉴权、零新载体。
 - **desktop profile**：`profiles/desktop/`（`dsh.profile.bundles = [dsh-base, dsh-web-app, dshmarket]`，cordis.patch.yml 覆盖 `web-runtime.printUrl: false`、`webserver.host: 0.0.0.0`），运行时复制到 `$DSH_HOME/profiles/desktop`。
 
-### 构建流程（四阶段 + 13 个 patch）
+### 构建流程（四阶段 + 14 个 patch）
 
-dsh 依赖的 Node 内建 API（HMR、原生目录对话框）与鸿蒙沙箱（symlink、loopback 隔离）冲突，需先应用 13 个 patch（幂等——`--reverse --check` 检测已应用则跳过）：
+dsh 依赖的 Node 内建 API（HMR、原生目录对话框）与鸿蒙沙箱（symlink、loopback 隔离）冲突，需先应用 14 个 patch（幂等——`--reverse --check` 检测已应用则跳过）：
 
 流水线共 **四阶段**（⓪–③），之后是本机构建 + 签名步骤（④）。阶段 ⓪ 是运行时同步：它强制覆盖上游运行时，**并重新施加本工程自己的定制**（prune + overlay），因此必须始终第一个运行。
 
@@ -104,7 +104,7 @@ dsh 依赖的 Node 内建 API（HMR、原生目录对话框）与鸿蒙沙箱（
 #    模块 + 3 个 SO + libc++_shared.so，prune 不需要的上游文件，再 overlay 回盖 runtime-overlays/
 node scripts/collect-runtime.mjs
 
-# ① 构建 dsh：清理 workspace 残留 → apply 13 patch → pnpm build host/client/web → build ../dsh-market
+# ① 构建 dsh：清理 workspace 残留 → apply 14 patch → pnpm build host/client/web → build ../dsh-market
 node scripts/build-dsh.mjs
 
 # ② 收集 dsh 产物：pnpm deploy 物化 → 补包 → sharp stub → better-sqlite3 注入 → web dist + profile + dshmarket + plugins
@@ -212,6 +212,7 @@ tar -czf web_engine/src/main/resources/resfile/resources/app/dsh-dist.tar.gz --f
 | `patches/dsh-v0.1.5-rc.2/dsh-allow-all-interfaces.patch` | 移除 webserver `--host 0.0.0.0` 拒绝检查（loopback 隔离需绑全网卡 + 局域网 IP） |
 | `patches/dsh-v0.1.5-rc.2/dsh-disable-hmr.patch` | `DSH_DISABLE_HMR` 开关，跳过依赖 `--expose-internals` 的 watch-only HMR |
 | `patches/dsh-v0.1.5-rc.2/dsh-disable-native-picker.patch` | 目录选择器走 browse（原生 dialog worker 在 Electron 下 spawn 失败） |
+| `patches/dsh-v0.1.5-rc.2/dsh-disable-welcome-notice.patch` | 移除客户端两步 `settings.onboarding`（版本化内测声明 + 官方 DeepSeek API Key 引导），首启直接进入应用；同步更新 `apply.client.spec.ts` 以匹配实际注册集 |
 | `patches/dsh-v0.1.5-rc.2/dsh-flock-openharmony.patch` | openharmony 平台以进程内方式放行 POSIX flock 写锁（无原生插件；单进程宿主，同 dsh 浏览器 worker stub 语义） |
 | `patches/dsh-v0.1.5-rc.2/dsh-hardlink-to-rename.patch` | 鸿蒙沙箱禁硬链接（`EACCES`）→ 以同目录 `rename` 独占发布，其余环境仍保持 `link` 优先 + `EEXIST` 语义（会话日志首次落盘 + 代际发布） |
 | `patches/dsh-v0.1.5-rc.2/dsh-fs-hardlink-fallback.patch` | hmdfs 用户目录挂载同样禁硬链接（`EPERM`，目录 inode 无 `.link` 处理器）→ `writeFileAtomic` 的守卫式新建在**已确认目标不存在**时回退为同目录 `rename`，不再以 `FS_IO_ERROR` 直接失败。仅作用于 `fs-local`；硬链接可用之处仍保持 link 优先 |
@@ -250,12 +251,14 @@ powershell -ExecutionPolicy Bypass -File scripts\build-hap.ps1 -BuildMode releas
 
 `scripts/build-hap.ps1` 是引擎（参数：`-Task Hap|App`、`-BuildMode debug|release`、`-SignMode auto|debug|release`，以及 `-JbrHome -SdkHome -NodeHome -Hvigorw -DevEcoHome`）；`-SignMode auto`（默认）跟随 `-BuildMode`。两个薄包装固定各自的默认值：`build-debug.ps1` 固定 `-BuildMode debug -SignMode debug`，`build-release.ps1` 固定 `-BuildMode release -SignMode release`。
 
+构建出的 `module.json` 声明了 `hnpPackages` 时（本项目就有，用于 `dshprobe` HNP 载荷），引擎会自动嵌入该载荷并重签 —— 因为 hvigor 产不出 HNP，而声明缺少对应原生包时系统安装器会以 `code:9568409 ... extract of the native package failed` 让整个安装失败。嵌入前会先清掉陈旧的 `*-hnp.hap` 产物；随后的签名断言校验的正是含 HNP 的那个产物 —— 也就是应当安装的那个。`-Task App` 仍需在重打 App Pack 前对内层 HAP 手工补这一步，引擎会在这种情况下响亮提醒。
+
 经 HDC 安装 debug 包并启动：
 
 ```bash
 hdc tconn <设备IP>:<端口>   # 先建立无线（IP）调试连接；端口见设备 开发者选项 → 无线调试
 hdc uninstall org.fellow99.DeepseekHarnessHarmony   # 首装/换产物需先卸载，清掉旧 userData 中过期 dsh-dist
-hdc app install -r electron/build/default/outputs/default/electron-default-signed.hap
+hdc app install -r electron/build/default/outputs/default/electron-default-signed-hnp.hap   # 装机产物：含 HNP 的那个 HAP（见构建流程）
 hdc shell aa start -a EntryAbility -b org.fellow99.DeepseekHarnessHarmony
 ```
 
@@ -405,7 +408,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1   # release�
 
 ```bash
 hdc uninstall org.fellow99.DeepseekHarnessHarmony
-hdc app install -r electron/build/default/outputs/default/electron-default-signed.hap
+hdc app install -r electron/build/default/outputs/default/electron-default-signed-hnp.hap   # 装机产物：含 HNP 的那个 HAP（见构建流程）
 hdc shell aa start -a EntryAbility -b org.fellow99.DeepseekHarnessHarmony
 ```
 
@@ -483,7 +486,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1   # -Task App
 │   ├── scripts/                   # 四阶段构建：collect-runtime → build-dsh → collect-dsh，外加 build-debug / build-release
 │   ├── runtime-overlays/          # 每次运行时 copy 后重新施加的应用定制（prune + overlay）
 │   ├── profiles/desktop/          # 自定义 desktop profile（cordis.patch.yml + package.json）
-│   ├── patches/                   # dsh 上游 patch（13 个）
+│   ├── patches/                   # dsh 上游 patch（14 个）
 │   ├── docs/                      # 工程规划与最终实现记录
 │   ├── plugins/                   # 本工程专用插件（harmony-plugin-XXX；编译期打入 HAP，运行期全部默认加载）
 │   ├── skills/                    # 本工程专用工具技能（功能性 kebab-case、无前缀；随 HAP 分发，作为 bundled 技能根提供）

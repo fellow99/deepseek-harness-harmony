@@ -50,7 +50,7 @@ This project wraps the dsh Web UI in a native HarmonyOS desktop shell (Electron-
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-Key point: **the renderer loads same-origin — zero CORS, zero auth, zero custom protocol, zero IPC carrier** — reusing dsh's existing `WebApiClient` (HTTP uplink + WebSocket downlink), **zero upstream changes** (only 13 patches).
+Key point: **the renderer loads same-origin — zero CORS, zero auth, zero custom protocol, zero IPC carrier** — reusing dsh's existing `WebApiClient` (HTTP uplink + WebSocket downlink), **zero upstream changes** (only 14 patches).
 
 **Differences from desktop** (HarmonyOS-specific adaptations, see `docs/工程规划.md` §18):
 
@@ -96,9 +96,9 @@ Key point: **the renderer loads same-origin — zero CORS, zero auth, zero custo
 - **Same-origin data plane**: the renderer does `loadURL(http://<LAN IP>:<port>/)` to load the dsh Web UI same-origin, reusing `WebApiClient` — zero CORS, zero auth, zero new carrier.
 - **desktop profile**: `profiles/desktop/` (`dsh.profile.bundles = [dsh-base, dsh-web-app, dshmarket]`, cordis.patch.yml overriding `web-runtime.printUrl: false`, `webserver.host: 0.0.0.0`), copied to `$DSH_HOME/profiles/desktop` at runtime.
 
-### Build process (four stages + 13 patches)
+### Build process (four stages + 14 patches)
 
-dsh depends on Node internal APIs (HMR, native directory dialog) and conflicts with the HarmonyOS sandbox (symlink, loopback isolation), so 13 patches must be applied first (idempotent — `--reverse --check` detects already-applied and skips):
+dsh depends on Node internal APIs (HMR, native directory dialog) and conflicts with the HarmonyOS sandbox (symlink, loopback isolation), so 14 patches must be applied first (idempotent — `--reverse --check` detects already-applied and skips):
 
 The pipeline is **four stages** (⓪–③), followed by the local build + signing step (④). Stage ⓪ is the runtime sync: it force-copies the upstream runtime **and re-applies this app's own customizations** (prune + overlay), so it must always be the first thing that runs.
 
@@ -107,7 +107,7 @@ The pipeline is **four stages** (⓪–③), followed by the local build + signi
 #    modules + 3 SOs + libc++_shared.so, prune unwanted upstream files, then overlay runtime-overlays/
 node scripts/collect-runtime.mjs
 
-# ① build dsh: clean workspace residue → apply 13 patches → pnpm build host/client/web → build ../dsh-market
+# ① build dsh: clean workspace residue → apply 14 patches → pnpm build host/client/web → build ../dsh-market
 node scripts/build-dsh.mjs
 
 # ② collect dsh artifacts: pnpm deploy materialize → fill packages → sharp stub → better-sqlite3 injection → web dist + profile + dshmarket + plugins
@@ -215,6 +215,7 @@ Mode selection is driven by the **`SIGN_MODE`** environment variable (`debug` | 
 | `patches/dsh-v0.1.5-rc.2/dsh-allow-all-interfaces.patch` | Remove webserver's `--host 0.0.0.0` rejection check (loopback isolation requires binding all interfaces + LAN IP) |
 | `patches/dsh-v0.1.5-rc.2/dsh-disable-hmr.patch` | Add `DSH_DISABLE_HMR` switch, skipping watch-only HMR (HMR depends on `--expose-internals`) |
 | `patches/dsh-v0.1.5-rc.2/dsh-disable-native-picker.patch` | Force directory-picker to use browse (native dialog worker fails to spawn under Electron) |
+| `patches/dsh-v0.1.5-rc.2/dsh-disable-welcome-notice.patch` | Drop the client's two `settings.onboarding` steps (versioned internal-testing notice + official-DeepSeek API-key prompt) so a first launch enters the app directly, and update `apply.client.spec.ts` to the shipped registration set |
 | `patches/dsh-v0.1.5-rc.2/dsh-flock-openharmony.patch` | Grant the POSIX flock write lock in-process on `openharmony` (no native addon; single-process host, same rationale as dsh's browser-worker stub) |
 | `patches/dsh-v0.1.5-rc.2/dsh-hardlink-to-rename.patch` | HarmonyOS sandbox refuses hard links (`EACCES`) → publish exclusively by same-directory `rename`, keeping the `link`-then-`EEXIST` preference everywhere else (session-log materialization + generation publication) |
 | `patches/dsh-v0.1.5-rc.2/dsh-fs-hardlink-fallback.patch` | Also refuses hard links on hmdfs user-directory mounts (`EPERM`, no `.link` handler) → `writeFileAtomic`'s guarded-create path falls back to a same-directory `rename` when the target is verified absent, instead of failing the create with `FS_IO_ERROR`. Scoped to `fs-local`; the link preference is unchanged wherever links work |
@@ -253,12 +254,14 @@ powershell -ExecutionPolicy Bypass -File scripts\build-hap.ps1 -BuildMode releas
 
 `scripts/build-hap.ps1` is the engine (params: `-Task Hap|App`, `-BuildMode debug|release`, `-SignMode auto|debug|release`, plus `-JbrHome -SdkHome -NodeHome -Hvigorw -DevEcoHome`); `-SignMode auto` (the default) resolves to `-BuildMode`. The two thin wrappers pin their own defaults: `build-debug.ps1` always uses `-BuildMode debug -SignMode debug`, `build-release.ps1` always uses `-BuildMode release -SignMode release`.
 
+When the built `module.json` declares `hnpPackages` — it does, for the `dshprobe` HNP payload — the engine then automatically embeds that payload and re-signs, because hvigor cannot produce an HNP and the system installer fails the whole install with `code:9568409 ... extract of the native package failed` when a declaration has no matching native package. It removes stale `*-hnp.hap` outputs first, and the signature assertion that follows checks the HNP-carrying artifact — the one to install. `-Task App` still needs that step applied to the inner HAP by hand before repacking, and the engine warns loudly when it applies.
+
 Install the debug build over HDC and launch it:
 
 ```bash
 hdc tconn <device-ip>:<port>   # wireless (IP) debugging first; the port is shown by Developer options → Wireless debugging
 hdc uninstall org.fellow99.DeepseekHarnessHarmony   # uninstall first on fresh install / artifact change, to clear stale dsh-dist in userData
-hdc app install -r electron/build/default/outputs/default/electron-default-signed.hap
+hdc app install -r electron/build/default/outputs/default/electron-default-signed-hnp.hap   # the HNP-carrying HAP is the installable one (see Build process)
 hdc shell aa start -a EntryAbility -b org.fellow99.DeepseekHarnessHarmony
 ```
 
@@ -422,7 +425,7 @@ requested signing mode (see [Signing](#signing-externalized--secrets-never-commi
 
 ```bash
 hdc uninstall org.fellow99.DeepseekHarnessHarmony
-hdc app install -r electron/build/default/outputs/default/electron-default-signed.hap
+hdc app install -r electron/build/default/outputs/default/electron-default-signed-hnp.hap   # the HNP-carrying HAP is the installable one (see Build process)
 hdc shell aa start -a EntryAbility -b org.fellow99.DeepseekHarnessHarmony
 ```
 
@@ -523,7 +526,7 @@ This project and the 3 consumed projects plus 1 architecture-reference project l
 │   ├── scripts/                   # Four-stage build: collect-runtime → build-dsh → collect-dsh, plus build-debug / build-release
 │   ├── runtime-overlays/          # App customizations re-applied after every runtime copy (prune + overlay)
 │   ├── profiles/desktop/          # Custom desktop profile (cordis.patch.yml + package.json)
-│   ├── patches/                   # dsh upstream patches (13)
+│   ├── patches/                   # dsh upstream patches (14)
 │   ├── docs/                      # Engineering plan and final implementation record
 │   ├── plugins/                   # This project's own plugins (harmony-plugin-XXX; baked into the HAP, all loaded by default)
 │   ├── skills/                    # This project's own tool skills (kebab-case, no prefix; shipped in the HAP as the bundled skill root)
