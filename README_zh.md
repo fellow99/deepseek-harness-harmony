@@ -254,14 +254,14 @@ powershell -ExecutionPolicy Bypass -File scripts\build-hap.ps1 -BuildMode releas
 
 `scripts/build-hap.ps1` 是引擎（参数：`-Task Hap|App`、`-BuildMode debug|release`、`-SignMode auto|debug|release`，以及 `-JbrHome -SdkHome -NodeHome -Hvigorw -DevEcoHome`）；`-SignMode auto`（默认）跟随 `-BuildMode`。两个薄包装固定各自的默认值：`build-debug.ps1` 固定 `-BuildMode debug -SignMode debug`，`build-release.ps1` 固定 `-BuildMode release -SignMode release`。
 
-构建出的 `module.json` 声明了 `hnpPackages` 时（本项目就有，用于 `dshprobe` HNP 载荷），引擎会自动嵌入该载荷并重签 —— 因为 hvigor 产不出 HNP，而声明缺少对应原生包时系统安装器会以 `code:9568409 ... extract of the native package failed` 让整个安装失败。嵌入前会先清掉陈旧的 `*-hnp.hap` 产物；随后的签名断言校验的正是含 HNP 的那个产物 —— 也就是应当安装的那个。`-Task App` 仍需在重打 App Pack 前对内层 HAP 手工补这一步，引擎会在这种情况下响亮提醒。
+本项目**刻意不使用 HNP**：声明 `hnpPackages` 会要求每个 HAP 与 App Pack 都携带配套的 `.hnp` 原生包 —— 而 hvigor 产不出它，于是两个产物都得走「事后注入 + 重签」；而该机制本要承载的能力当前也不在范围内。因此构建**不需要任何注入步骤**：hvigor 自己签出的 HAP 与 App Pack 就是交付物，可直接安装/上架。见 `docs/鸿蒙环境能力清单-v0.1.5.md` A.2 #30。
 
 经 HDC 安装 debug 包并启动：
 
 ```bash
 hdc tconn <设备IP>:<端口>   # 先建立无线（IP）调试连接；端口见设备 开发者选项 → 无线调试
 hdc uninstall org.fellow99.DeepseekHarnessHarmony   # 首装/换产物需先卸载，清掉旧 userData 中过期 dsh-dist
-hdc app install -r electron/build/default/outputs/default/electron-default-signed-hnp.hap   # 装机产物：含 HNP 的那个 HAP（见构建流程）
+hdc app install -r electron/build/default/outputs/default/electron-default-signed.hap
 hdc shell aa start -a EntryAbility -b org.fellow99.DeepseekHarnessHarmony
 ```
 
@@ -411,7 +411,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1   # release�
 
 ```bash
 hdc uninstall org.fellow99.DeepseekHarnessHarmony
-hdc app install -r electron/build/default/outputs/default/electron-default-signed-hnp.hap   # 装机产物：含 HNP 的那个 HAP（见构建流程）
+hdc app install -r electron/build/default/outputs/default/electron-default-signed.hap
 hdc shell aa start -a EntryAbility -b org.fellow99.DeepseekHarnessHarmony
 ```
 

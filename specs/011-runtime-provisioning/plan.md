@@ -3,6 +3,8 @@
 > 模块：011-runtime-provisioning
 > 对应规格：[specs/011-runtime-provisioning/spec.md](./spec.md)
 > Last Updated: 2026-09-18
+>
+> ⛔ **HNP 已整体移除（2026-09-23）**：`hnpPackages` 声明、`electron/hnp{,-src}/` 载荷与探针、`scripts/inject-hnp.ps1` 与 `inject-hnp-app.ps1`、以及 `build-hap.ps1` 的自动嵌入逻辑与 `-hnp` 产物**均已删除** —— 本工程不再使用 HNP（见 `docs/鸿蒙环境能力清单-v0.1.5.md` A.2 #30）。故本文件中凡以「路径 A / HNP 打包」为前提的表述（`inject-hnp.ps1`、`hnpPackages`、`hnp.json`、含 `hnp/` 的验收步骤）**均不再适用**，仅作为当时的设计记录保留。**设备端第三方 HNP 仍被复用**：`/data/service/hnp/bin` 提供的 node 是路径 C 的事实基础。
 
 ## 1. 技术上下文
 

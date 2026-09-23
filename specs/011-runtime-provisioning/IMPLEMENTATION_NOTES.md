@@ -4,6 +4,8 @@
 > 对应规格：[spec.md](./spec.md) ｜ 方案：[plan.md](./plan.md) ｜ 任务：[tasks.md](./tasks.md) ｜ 用例：[test-cases.md](./test-cases.md)
 > 记录日期：2026-09-18
 > 设备状态：**当前无设备连接** —— 本文件**不含**任何真机结论；`tasks.md` 中依赖设备的项一律保持 `未验证`。
+>
+> ⛔ **HNP 已整体移除（2026-09-23）**：`hnpPackages` 声明、`electron/hnp{,-src}/` 载荷与探针、`scripts/inject-hnp.ps1` 与 `inject-hnp-app.ps1`、以及 `build-hap.ps1` 的自动嵌入逻辑与 `-hnp` 产物**均已删除** —— 本工程不再使用 HNP（见 `docs/鸿蒙环境能力清单-v0.1.5.md` A.2 #30）。故本文件中凡以「路径 A / HNP 打包」为前提的记录**仅作历史留存**，不再代表当前构建流程；**设备端第三方 HNP 仍被复用**（路径 C）。
 
 本记录只陈述**已执行并抓到输出**的事实；未执行项显式标为「未执行 / 待下一步」，不臆测结果。
 

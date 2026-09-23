@@ -254,14 +254,14 @@ powershell -ExecutionPolicy Bypass -File scripts\build-hap.ps1 -BuildMode releas
 
 `scripts/build-hap.ps1` is the engine (params: `-Task Hap|App`, `-BuildMode debug|release`, `-SignMode auto|debug|release`, plus `-JbrHome -SdkHome -NodeHome -Hvigorw -DevEcoHome`); `-SignMode auto` (the default) resolves to `-BuildMode`. The two thin wrappers pin their own defaults: `build-debug.ps1` always uses `-BuildMode debug -SignMode debug`, `build-release.ps1` always uses `-BuildMode release -SignMode release`.
 
-When the built `module.json` declares `hnpPackages` — it does, for the `dshprobe` HNP payload — the engine then automatically embeds that payload and re-signs, because hvigor cannot produce an HNP and the system installer fails the whole install with `code:9568409 ... extract of the native package failed` when a declaration has no matching native package. It removes stale `*-hnp.hap` outputs first, and the signature assertion that follows checks the HNP-carrying artifact — the one to install. `-Task App` still needs that step applied to the inner HAP by hand before repacking, and the engine warns loudly when it applies.
+HNP (native packages) is deliberately **not used**: declaring `hnpPackages` obliges every HAP and App Pack to carry a matching `.hnp` payload — something hvigor cannot produce, so it would need a post-pack injection and re-sign step for both artifacts — and the capability it was meant to carry is out of scope for now. Builds therefore need no injection step at all: hvigor's own signed HAP and App Pack are the deliverables, installable and submittable as they are. See `docs/鸿蒙环境能力清单-v0.1.5.md` A.2 #30.
 
 Install the debug build over HDC and launch it:
 
 ```bash
 hdc tconn <device-ip>:<port>   # wireless (IP) debugging first; the port is shown by Developer options → Wireless debugging
 hdc uninstall org.fellow99.DeepseekHarnessHarmony   # uninstall first on fresh install / artifact change, to clear stale dsh-dist in userData
-hdc app install -r electron/build/default/outputs/default/electron-default-signed-hnp.hap   # the HNP-carrying HAP is the installable one (see Build process)
+hdc app install -r electron/build/default/outputs/default/electron-default-signed.hap
 hdc shell aa start -a EntryAbility -b org.fellow99.DeepseekHarnessHarmony
 ```
 
@@ -425,7 +425,7 @@ requested signing mode (see [Signing](#signing-externalized--secrets-never-commi
 
 ```bash
 hdc uninstall org.fellow99.DeepseekHarnessHarmony
-hdc app install -r electron/build/default/outputs/default/electron-default-signed-hnp.hap   # the HNP-carrying HAP is the installable one (see Build process)
+hdc app install -r electron/build/default/outputs/default/electron-default-signed.hap
 hdc shell aa start -a EntryAbility -b org.fellow99.DeepseekHarnessHarmony
 ```
 

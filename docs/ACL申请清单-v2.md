@@ -4,6 +4,8 @@
 > **配套文档**：本清单只讲「申请什么、怎么申请」。能力边界与根因分层见 `docs/鸿蒙环境能力清单-v0.1.5.md`；两个需求的规格见 `specs/010-tool-bash/` 与 `specs/011-runtime-provisioning/`。
 > **数据来源**：本机 DevEco SDK 的权威权限目录 `sdk/default/openharmony/toolchains/lib/PermissionDefinitions.json`（**第一手**）＋ OpenHarmony 官方文档 ＋ 华为 AGC 官方文档（出处见 §11）。
 > **图例**：✅ 已获得 / 已声明 ｜ ⬜ 待申请 ｜ ❌ 不申请 ｜ ❓ 未证实。
+>
+> ⛔ **HNP 已整体移除（2026-09-23）**：本工程不再使用 HNP —— `hnpPackages` 声明、`electron/hnp{,-src}/` 载荷、`inject-hnp.ps1` / `inject-hnp-app.ps1` 与构建接线均已删除（见 `docs/鸿蒙环境能力清单-v0.1.5.md` A.2 #30）。故本清单中与「HNP 携带已签名 ELF」相关的行仅作历史参考。**A1（二进制证书）与 A2 系列（`ALLOW_EXTERNAL_NATIVE_CODE` 等）本就服务于「随包分发自有 ELF」，随 011 路径 A 一并失效** —— 011 已改走「复用设备已有工具链」路线（不需要证书，见能力清单 §C.8.7）。**设备端第三方 HNP（`/data/service/hnp/bin` 提供的 node）仍被复用**，那是路径 C 的事实基础。
 
 ---
 
@@ -54,7 +56,7 @@
 | AGC 证书类型号 | **`certType: 4`** —— 「二进制证书（用于二进制程序签名）」 |
 | 获取方式 | **受限开放**：无自助控制台入口，需通过**在线工单系统**联系华为 |
 | 工单必填四项 | ① **企业名称与资质** ② **应用名称及 APP ID** ③ **应用的业务场景与用途** ④ **申请的证书类型：二进制证书** |
-| 为什么本工程必须要 | 我们必须在设备上运行 **Node 运行时（ELF）**。HNP 内嵌 ELF 会被安装器的 `CodeSign + BssInstall（若 CODE_SIGNATURE_ENABLE）` **验签**；未签名跑不起来。`executableBinaryPaths` 路线同理 |
+| 为什么本工程必须要 | 我们必须在设备上运行 **Node 运行时（ELF）**。HNP 内嵌 ELF 会被安装器的 `CodeSign + BssInstall（若 CODE_SIGNATURE_ENABLE）` **验签**；未签名跑不起来。`executableBinaryPaths` 路线同理。⛔ **该前提已随 HNP 移除而作废（2026-09-23）：本工程不再随包分发自有 ELF** |
 | 能否用自签名替代 | ❌ **不能用于发布**。`binary-sign-tool ... -selfSign 1` 存在且可用（`display-sign` 会报 `code signature is self-sign`），但官方文档**未说明**它是否仅限开发者模式（❓ 未证实）；社区反馈自签名二进制在 PC 上首次执行会弹窗确认。**一律按「仅本地调试便利」对待** |
 | 配额 | ❓ 未证实（官方未公布二进制证书的账号配额） |
 | ⛔ **个人开发者不可得（2026-09-22 确证）** | **本工程当前主体（个人开发者）申请不下来** —— 工单要求企业名称与资质。**因此 011 的"自带 Node/pnpm/python 运行时"路线（T5）在当前主体下不可行**，A2 的 `ALLOW_EXTERNAL_NATIVE_CODE` / `LOAD_INDEPENDENT_LIBRARY` **也一并失去意义**（它们服务于自有 ELF，而 ELF 过不了签名闸门）→ **A2-a / A2-b 建议暂缓提交**，只保留 A2-c / A2-d（它们与 ELF 无关）。影响范围与两条**不需要证书**的替代路线见 `鸿蒙环境能力清单-v0.1.5.md` §C.8。 |
@@ -117,7 +119,7 @@ AGC 单次申请上限 **30 个权限**，下列四项一起交。
 | 方案 | 是否需要新 ACL / 证书 |
 |---|---|
 | **进程内 JS 运行 pnpm**（`011` 的候选主路径） | ❌ **不需要任何 ACL，也不需要二进制证书**。主进程本身就是 Node 22.17，把 pnpm 与 dsh CLI 以 JS 形式 vendor 进来、进程内 `import()` 执行 —— 不 spawn、不建软链、不落 ELF |
-| **HNP 携带已签名 ELF** | HNP **机制本身不需要任何权限/ACL**（`module.json5` 的 `hnpPackages` 纯配置项）；但**里面的 ELF 仍需要 A1 的二进制证书 + `.codesign`** |
+| **HNP 携带已签名 ELF** | HNP **机制本身不需要任何权限/ACL**（`module.json5` 的 `hnpPackages` 纯配置项）；但**里面的 ELF 仍需要 A1 的二进制证书 + `.codesign`**。⛔ **本工程已不使用 HNP（2026-09-23）** |
 | **Node 以 `.so` 形式进程内加载** | 需要 A2-b「`LOAD_INDEPENDENT_LIBRARY`」+ 证书签名的 `.so` |
 | **用 `CUSTOM_SANDBOX` 做真隔离** | ❌ **不要申请**。system_basic / since 18 / 受限，但社区一致反映仅华为内部可得（❓ 未证实），且变更应用沙箱类型属高风险变更，上架几乎不可能 |
 | **`ohos.permission.RUN_ANY_CODE`** | ❌ **不要申请**。system_basic / since 10 / 受限，无正当第三方用途，申请会降低整批可信度 |
@@ -188,7 +190,7 @@ AGC 单次申请上限 **30 个权限**，下列四项一起交。
 
 | 动作 | 内容 | 触发条件 |
 |---|---|---|
-| 声明层（**无需等审核**） | 若走 ELF 路线：补 `INHERIT_PARENT_PERMISSION`、`kernel.IGNORE_LIBRARY_VALIDATION`、`kernel.EXEMPT_ANONYMOUS_EXECUTABLE_MEMORY` | `011` 方案定型为「ELF（HNP 或 `executableBinaryPaths`）」 |
+| 声明层（**无需等审核**） | 若走 ELF 路线：补 `INHERIT_PARENT_PERMISSION`、`kernel.IGNORE_LIBRARY_VALIDATION`、`kernel.EXEMPT_ANONYMOUS_EXECUTABLE_MEMORY` | `011` 方案定型为「ELF（HNP 或 `executableBinaryPaths`）」——⛔ **HNP 一项已随特性移除作废（2026-09-23）** |
 | 声明层 | 若走 `executableBinaryPaths`：加 `module.executableBinaryPaths`、`extractNativeLibs: true`、`collectAllLibs: true` | 同上 |
 | ELF 侧 | 用 `binary-sign-tool -moduleFile` 把同一批权限写进 ELF 的 **`.permission` 节** | 证书到手后 |
 | ACL | A2-a / A2-b 入发布 Profile | A1 与 A2 提交获批后 |

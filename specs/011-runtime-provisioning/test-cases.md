@@ -5,6 +5,8 @@
 > 对应方案：[specs/011-runtime-provisioning/plan.md](./plan.md)
 > 对应任务：[specs/011-runtime-provisioning/tasks.md](./tasks.md)
 > Last Updated: 2026-09-18
+>
+> ⛔ **HNP 已整体移除（2026-09-23）**：`hnpPackages` 声明、`electron/hnp{,-src}/` 载荷与探针、`scripts/inject-hnp.ps1` 与 `inject-hnp-app.ps1`、以及 `build-hap.ps1` 的自动嵌入逻辑与 `-hnp` 产物**均已删除** —— 本工程不再使用 HNP（见 `docs/鸿蒙环境能力清单-v0.1.5.md` A.2 #30）。故本文件中**以 HNP 载荷/声明为对象的用例（TC-B2、TC-B3 等）与含 `inject-hnp.ps1` / `hnp/` 的步骤均不再适用**，仅作为当时的设计记录保留；**设备端第三方 HNP 仍被复用**（TC-D1 的设备路径复核仍有效）。
 
 ## 0. 测试环境与前置
 
