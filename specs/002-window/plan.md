@@ -172,7 +172,7 @@ BrowserWindow 创建（1200×800 / title / autoHideMenuBar / setWindowButtonVisi
 
 | 规格需求 | 实现位置 |
 |----------|----------|
-| FR-002-001（主窗口 1200×800 + 标题） | `BrowserWindow({ width:1200, height:800, title:'DeepSeek Harness' })`（main.js:477-482） |
+| FR-002-001（主窗口 1200×800 + 标题） | `BrowserWindow({ width:1200, height:800, title:'DSH Desktop' })`（main.js:477-482） |
 | FR-002-002（去默认菜单 + 隐藏菜单栏） | `Menu.setApplicationMenu(null)`（main.js:472）+ `autoHideMenuBar: true`（main.js:481） |
 | FR-002-003（窗口按钮可见） | `win.setWindowButtonVisibility(true)`（main.js:483） |
 | FR-002-004（创建失败不崩溃） | try/catch + `__winError` + return（main.js:476-488） |

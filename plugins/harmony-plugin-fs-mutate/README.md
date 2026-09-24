@@ -4,7 +4,7 @@
 
 # harmony-plugin-fs-mutate
 
-Model-facing `delete`, `move`, `copy`, and `chmod` filesystem tools for DeepSeek Harness.
+Model-facing `delete`, `move`, `copy`, and `chmod` filesystem tools for DSH.
 
 ## Purpose
 

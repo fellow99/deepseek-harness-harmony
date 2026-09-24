@@ -175,7 +175,7 @@ export class TrayAdapter extends BaseAdapter {
     try {
       const menus: statusBarManager.StatusBarMenuItem[] = this.buildMenu(request.menu);
       const quickOperation: statusBarManager.QuickOperation = {
-        title: request.title ?? 'DeepSeek Harness',
+        title: request.title ?? 'DSH Desktop',
         height: request.quickOperationHeight ?? 300,
         abilityName: request.quickOperationAbilityName ?? '',
       };

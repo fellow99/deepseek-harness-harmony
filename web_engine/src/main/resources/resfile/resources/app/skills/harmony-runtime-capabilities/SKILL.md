@@ -1,6 +1,6 @@
 ---
 name: harmony-runtime-capabilities
-description: What this HarmonyOS build of DeepSeek Harness can and cannot do — available tools, how to list directories, how command execution works (a non-PTY resident `bash` tool), why file creation can fail outside the workspace, and which capabilities are absent. Read this before assuming a command or tool works.
+description: What this HarmonyOS build of DSH can and cannot do — available tools, how to list directories, how command execution works (a non-PTY resident `bash` tool), why file creation can fail outside the workspace, and which capabilities are absent. Read this before assuming a command or tool works.
 whenToUse: Before running shell commands with `bash`, listing directories, deleting, moving or copying files, changing file permissions, writing into Desktop/Documents/Download, or when a tool seems to be missing.
 ---
 

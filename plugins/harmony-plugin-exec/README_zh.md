@@ -4,7 +4,7 @@
 
 # harmony-plugin-exec
 
-鸿蒙侧 DeepSeek Harness 的模型可见 `bash` 命令执行工具，后端是**一个非 PTY 的常驻 `/system/bin/sh`**，由哨兵行协议驱动。
+鸿蒙侧 DSH 的模型可见 `bash` 命令执行工具，后端是**一个非 PTY 的常驻 `/system/bin/sh`**，由哨兵行协议驱动。
 
 ## 目的
 

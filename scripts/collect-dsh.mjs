@@ -410,6 +410,47 @@ function ensurePresetRows(out) {
 }
 
 /**
+ * 前端文案守卫：本应用不上架「内测/预览」语义，且品牌已统一为 `DSH Desktop`。
+ * 这些改动由 dsh 补丁（`dsh-disable-welcome-notice.patch` / `dsh-rebrand.patch`）落到构建产物；
+ * 补丁一旦失效（dsh 升级、冲突被跳过、手工改回），产物会**静默**回到旧文案（首启内测声明、
+ * 首页「探索未至之境」/「预览版」/「DSH 本地构建」），审核会再次驳回，故在此硬失败。
+ * @returns {void}
+ */
+function assertClientCopyPatched() {
+  const checks = [
+    {
+      rel: 'node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js',
+      forbid: ['settings.onboarding'],
+      why: '首启内测声明（dsh-disable-welcome-notice.patch）',
+    },
+    {
+      rel: 'node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js',
+      forbid: ['探索未至之境'],
+      require: ['DSH Desktop'],
+      why: '首页品牌/标题与去「预览版」（dsh-rebrand.patch）',
+    },
+  ];
+  for (const c of checks) {
+    const file = resolve(distDir, c.rel);
+    if (!existsSync(file)) {
+      throw new Error(`[collect-dsh] 前端守卫：找不到 ${c.rel}（产物结构可能已变化，请重新评估该守卫）`);
+    }
+    const text = readFileSync(file, 'utf8');
+    for (const token of c.forbid) {
+      if (text.includes(token)) {
+        throw new Error(`[collect-dsh] 前端守卫失败：${c.rel} 仍含「${token}」——${c.why} 未生效`);
+      }
+    }
+    for (const token of c.require ?? []) {
+      if (!text.includes(token)) {
+        throw new Error(`[collect-dsh] 前端守卫失败：${c.rel} 缺少「${token}」——${c.why} 未生效`);
+      }
+    }
+  }
+  console.log('[collect-dsh] 前端文案守卫通过：无 settings.onboarding / 无「探索未至之境」/ 含 DSH Desktop');
+}
+
+/**
  * HarmonyOS: `HARMONY_ENSURED_PRESET_ROWS` 必须与 `src-main/main.js` 的同名表逐条一致。
  *
  * 同一批 preset 行由两处分别补入：本脚本补进构建产物，`src-main/main.js` 在设备上按运行期
@@ -587,6 +628,7 @@ injectBetterSqlite3();
 // 6e. 先互校两处 preset 行（与 src-main/main.js 逐条一致），再适配 agent preset
 //     （禁用依赖 shell/subprocess/pty 的行，补齐列目录工具行）
 assertPresetRowsMirrorMainJs();
+assertClientCopyPatched();
 patchAgentPresets();
 
 // 7. 复制 web dist（pnpm deploy 不物化 build 产物，frontend-static 经

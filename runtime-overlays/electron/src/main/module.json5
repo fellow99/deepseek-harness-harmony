@@ -30,7 +30,7 @@
         "name": "EntryAbility",
         "srcEntry": "./ets/entryability/EntryAbility.ets",
         "description": "$string:EntryAbility_desc",
-        "icon": "$media:app_icon",
+        "icon": "$media:window_icon",
         "label": "$string:EntryAbility_label",
         "startWindowIcon": "$media:startIcon",
         "startWindowBackground": "$color:start_window_background",
@@ -46,12 +46,10 @@
         "skills": [
           {
             "entities": [
-              "entity.system.home",
-              "entity.system.browsable"
+              "entity.system.home"
             ],
             "actions": [
-              "action.system.home",
-              "ohos.want.action.viewData"
+              "action.system.home"
             ],
             "uris": []
           }

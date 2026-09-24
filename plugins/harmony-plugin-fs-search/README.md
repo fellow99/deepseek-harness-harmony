@@ -1,6 +1,6 @@
 # harmony-plugin-fs-search
 
-Model-facing `grep` content-search and `glob` file-discovery tools for DeepSeek Harness.
+Model-facing `grep` content-search and `glob` file-discovery tools for DSH.
 
 ## Purpose
 

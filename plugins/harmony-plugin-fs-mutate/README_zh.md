@@ -4,7 +4,7 @@
 
 # harmony-plugin-fs-mutate
 
-面向模型的 DeepSeek Harness 文件系统 `delete` / `move` / `copy` / `chmod` 工具。
+面向模型的 DSH 文件系统 `delete` / `move` / `copy` / `chmod` 工具。
 
 ## 用途
 

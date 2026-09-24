@@ -4,7 +4,7 @@
 
 # harmony-plugin-exec
 
-Model-facing `bash` command-execution tool for DeepSeek Harness on HarmonyOS, backed by one **non-PTY resident `/system/bin/sh`** driven by a sentinel-line protocol.
+Model-facing `bash` command-execution tool for DSH on HarmonyOS, backed by one **non-PTY resident `/system/bin/sh`** driven by a sentinel-line protocol.
 
 ## Purpose
 

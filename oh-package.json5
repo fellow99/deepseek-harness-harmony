@@ -1,6 +1,6 @@
 {
   "modelVersion": "6.1.1",
-  "description": "DeepSeek Harness HarmonyOS 桌面版（Electron-on-鸿蒙 运行时）",
+  "description": "DSH Desktop（HarmonyOS 版，Electron-on-鸿蒙 运行时）",
   "dependencies": {
   },
   "devDependencies": {

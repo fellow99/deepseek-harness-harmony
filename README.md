@@ -2,7 +2,7 @@
 
 ---
 
-# DeepSeek Harness HarmonyOS Desktop
+# DSH Desktop (HarmonyOS)
 
 > A HarmonyOS desktop wrapper for [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) built on the "Electron-on-HarmonyOS" runtime ([harmonypc-electron](https://atomgit.com/jianguoxu/harmonypc-electron), Electron 37 / Node 22.17.0) — runs the dsh Host (with webserver) inside the Electron main process on HarmonyOS devices, and the renderer loads the dsh Web UI same-origin, 100% reusing the dsh Web UI.
 

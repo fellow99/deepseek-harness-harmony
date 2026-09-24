@@ -53,22 +53,31 @@ const EXCLUDE_TOP = new Set(['build', 'oh_modules', 'node_modules', '.git', '.hv
 
 /**
  * App 配置 overlay 白名单（相对工程/目标根的镜像路径）。
- * 共 10 个，均为本 App 自身的定制：2 个 module.json5（entry 的 manifest 含后台保活声明）+
- * 1 个 Ability 源码（后台保活申请/释放）+ 快捷方式配置 + 3 个 adapter/jsbindings/common 定制 +
- * 3 个 locale 资源。
+ * 共 17 个，均为本 App 自身的定制：2 个 module.json5（entry 的 manifest 含后台保活声明）+
+ * 1 个 Ability 源码（后台保活申请/释放）+ 2 个主窗口页面（AI 生成内容常驻标识）+ 快捷方式配置 +
+ * main_pages（新增 ArkWeb 外部网页页）+ 3 个 adapter/jsbindings/common 定制 +
+ * 1 个状态栏图标（electron_white.png，替换为产品 LOGO）+
+ * 6 个 locale 资源（electron 3 + web_engine 3；electron 侧承载 OS 桌面显示名 EntryAbility_label）。
  * 全部由阶段 7.6 做源/目标 md5 一致性守卫。
  */
 const OVERLAY_FILES = [
   'electron/src/main/module.json5',
   'electron/src/main/ets/entryability/EntryAbility.ets',
+  'electron/src/main/ets/pages/Index.ets',
+  'electron/src/main/ets/pages/NodeHandleWindow.ets',
   'web_engine/src/main/module.json5',
   'electron/src/main/resources/base/profile/shortcuts_config.json',
+  'electron/src/main/resources/base/profile/main_pages.json',
+  'electron/src/main/resources/base/element/string.json',
+  'electron/src/main/resources/en_US/element/string.json',
+  'electron/src/main/resources/zh_CN/element/string.json',
   'web_engine/src/main/ets/adapter/MediaAdapter.ets',
   'web_engine/src/main/ets/common/CommandLineAdapter.ets',
   'web_engine/src/main/ets/jsbindings/JsBindingMethod.ets',
   'web_engine/src/main/resources/base/element/string.json',
   'web_engine/src/main/resources/en_US/element/string.json',
   'web_engine/src/main/resources/zh_CN/element/string.json',
+  'web_engine/src/main/resources/resfile/resources/app/electron_white.png',
 ];
 
 /**
@@ -92,6 +101,7 @@ const OVERLAY_ADD_FILES = [
   'web_engine/src/main/ets/jsbindings/ImageAdapterBind.ets',
   'web_engine/src/main/ets/adapter/TrayAdapter.ets',
   'web_engine/src/main/ets/jsbindings/TrayAdapterBind.ets',
+  'electron/src/main/ets/pages/ExternalWeb.ets',
 ];
 
 /**

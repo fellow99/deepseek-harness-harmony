@@ -2,7 +2,7 @@
   "name": "harmony-plugin-fs-mutate",
   "version": "0.1.0",
   "private": true,
-  "description": "DeepSeek Harness plugin: the model-facing delete, move, copy, and chmod filesystem tools over the sandbox-fenced ctx.fs mutation primitives",
+  "description": "DSH plugin: the model-facing delete, move, copy, and chmod filesystem tools over the sandbox-fenced ctx.fs mutation primitives",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

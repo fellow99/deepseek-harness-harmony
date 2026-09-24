@@ -1,5 +1,5 @@
 /**
- * DeepSeek Harness 鸿蒙版 — Electron 主进程（Electron-on-鸿蒙 运行时）
+ * DSH Desktop（HarmonyOS 版） — Electron 主进程（Electron-on-鸿蒙 运行时）
  *
  * 与 deepseek-harness-desktop 的 main 进程（host.ts + index.ts）等价，但为 CommonJS 入口
  * （鸿蒙 Electron 示例用 require('electron')），dsh 的 ESM 产物经动态 import 加载。
@@ -26,7 +26,7 @@ const LOADING_HTML = `<!DOCTYPE html>
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Deepseek Harness Harmony</title>
+  <title>DSH Desktop</title>
   <style>
     html, body { height: 100%; margin: 0; }
     body {
@@ -46,7 +46,7 @@ const LOADING_HTML = `<!DOCTYPE html>
 </head>
 <body>
   <div class="spinner"></div>
-  <div class="title">Deepseek Harness Harmony</div>
+  <div class="title">DSH Desktop</div>
   <div class="hint">应用初始化中，请稍候…</div>
 </body>
 </html>`;
@@ -695,6 +695,40 @@ function installLoopbackHeaderRewrite(win, port) {
   }
 }
 
+/**
+ * 合规（应用市场「内部规则」）：本应用不得用内嵌 Chromium「打开网页」。
+ *
+ * 主界面是同源本地 UI（应用自身界面）；任何试图**弹窗或导航到非本应用来源**的 http(s) 一律
+ * 拦截并记录——外部网页改由 ArkWeb 页 `pages/ExternalWeb` 承载。这样即便页面内出现外链，
+ * Chromium 也不会被用来打开网页。
+ */
+function installExternalNavigationGuard(win) {
+  try {
+    win.webContents.setWindowOpenHandler(({ url }) => {
+      console.warn('[dsh-harmony] 已拦截弹窗打开网页（外部内容应走 ArkWeb 页 pages/ExternalWeb）:', url);
+      return { action: 'deny' };
+    });
+    win.webContents.on('will-navigate', (event, url) => {
+      let allowed = true;
+      try {
+        const target = new URL(url);
+        const appPort = host ? String(host.port) : '';
+        allowed = target.protocol === 'data:' || target.protocol === 'about:'
+          || (appPort !== '' && target.port === appPort);
+      } catch {
+        allowed = true; // 非标准 URL：放行（不改变既有行为）
+      }
+      if (!allowed) {
+        console.warn('[dsh-harmony] 已拦截外部导航（外部内容应走 ArkWeb 页 pages/ExternalWeb）:', url);
+        event.preventDefault();
+      }
+    });
+    console.log('[dsh-harmony] 已安装外部网页拦截（Chromium 不打开外部页面）');
+  } catch (err) {
+    console.error('[dsh-harmony] 外部网页拦截安装失败:', err);
+  }
+}
+
 // ── 主窗口状态持久化 + F11 全屏 ─────────────────────────────────────
 // 记录最大化/普通（普通时含位置与尺寸），下次启动恢复；F11 切换全屏。
 function windowStateFile() {
@@ -821,8 +855,8 @@ async function installTray() {
     // InitializationOptions），也是框架图标路径所依据的形态。
     const size = icon.getSize();
     const payload = JSON.stringify({
-      title: 'DeepSeek Harness',
-      tooltips: 'DeepSeek Harness',
+      title: 'DSH Desktop',
+      tooltips: 'DSH Desktop',
       // 300 is what Qt's OHOS platform plugin uses; quickOperationAbilityName is
       // left unset so the adapter's empty-string default applies (Qt and the
       // runtime's own StatusBarManagerAdapter both pass an empty string).
@@ -859,13 +893,14 @@ app.whenReady().then(async () => {
       ...(savedState.x !== undefined && savedState.y !== undefined
         ? { x: savedState.x, y: savedState.y }
         : {}),
-      title: 'Deepseek Harness Harmony',
+      title: 'DSH Desktop',
       autoHideMenuBar: true,
       webPreferences: DSH_WEB_PREFERENCES,
     });
     win.setWindowButtonVisibility(true);
     trackWindowState(win);
     installFullscreenShortcut(win);
+    installExternalNavigationGuard(win);
     if (savedState.isMaximized) win.maximize();
   } catch (e) {
     globalThis.__winError = String(e && e.message ? e.message : e);

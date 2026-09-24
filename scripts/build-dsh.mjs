@@ -21,6 +21,7 @@ const patchFiles = [
   resolve(patchDir, 'dsh-disable-hmr.patch'),
   resolve(patchDir, 'dsh-disable-native-picker.patch'),
   resolve(patchDir, 'dsh-disable-welcome-notice.patch'),
+  resolve(patchDir, 'dsh-rebrand.patch'),
   resolve(patchDir, 'dsh-flock-openharmony.patch'),
   resolve(patchDir, 'dsh-hardlink-to-rename.patch'),
   resolve(patchDir, 'dsh-fs-hardlink-fallback.patch'),

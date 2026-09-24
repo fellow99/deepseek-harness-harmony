@@ -4,7 +4,7 @@
 
 # harmony-plugin-fs-search
 
-面向模型的 DeepSeek Harness `grep` 内容搜索与 `glob` 文件发现工具。
+面向模型的 DSH `grep` 内容搜索与 `glob` 文件发现工具。
 
 ## 用途
 
