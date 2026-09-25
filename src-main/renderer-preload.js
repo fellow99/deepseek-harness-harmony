@@ -48,3 +48,33 @@ try {
   var t = globalThis.__DSH_TRANSPORT__ || (globalThis.__DSH_TRANSPORT__ = {});
   t.ownsHost = true;
 } catch (e) { /* 主世界注入失败时忽略，浏览器侧退回非 loopback 判定 */ }
+
+// 3) 强制“在线”状态：鸿蒙 Electron 运行时未给 Chromium 的 NetworkChangeNotifier 喂网络
+//    可达信号，navigator.onLine 恒为 false。dsh 客户端连接层（watchBrowserNetwork）启动时
+//    读 window.navigator.onLine，false 即令 ConnectionController 挂起，永不打开
+//    /api/remote.mux WebSocket，侧栏常驻“连接异常”。本应用数据面是同机进程内 loopback，
+//    浏览器“是否能上互联网”的信号在此无意义，故在主世界把 onLine 钉为 true，并屏蔽 offline
+//    事件、立即补发一次 online，使连接层正常建链。
+try {
+  var navProto = Object.getPrototypeOf(globalThis.navigator) || globalThis.Navigator.prototype;
+  var onlineDesc = { configurable: true, enumerable: true, get: function () { return true; } };
+  if (typeof globalThis.navigator === 'object') {
+    Object.defineProperty(globalThis.navigator, 'onLine', onlineDesc);
+  }
+  if (navProto) {
+    var origAdd = globalThis.EventTarget.prototype.addEventListener;
+    var origRemove = globalThis.EventTarget.prototype.removeEventListener;
+    globalThis.EventTarget.prototype.addEventListener = function (type, listener, options) {
+      if (type === 'offline') return;
+      var ret = origAdd.call(this, type, listener, options);
+      if (type === 'online' && typeof listener === 'function') {
+        try { listener.call(this, new Event('online')); } catch (e) { /* 立即派发失败时忽略 */ }
+      }
+      return ret;
+    };
+    globalThis.EventTarget.prototype.removeEventListener = function (type, listener, options) {
+      if (type === 'offline') return;
+      return origRemove.call(this, type, listener, options);
+    };
+  }
+} catch (e) { /* 主世界注入失败时忽略，连接层退回离线判定 */ }
