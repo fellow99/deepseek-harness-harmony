@@ -1,6 +1,6 @@
 # skills/ —— 本工程专用技能
 
-本目录存放 **deepseek-harness-harmony 专用**的 dsh 工具技能：它们描述或依赖**本壳特有的运行期环境**（HarmonyOS HAP 的沙箱围栏、`hmdfs` 特性、能力缺口、打包路径等），因此在其它壳上不成立。
+本目录存放 **dsh-desktop-hos 专用**的 dsh 工具技能：它们描述或依赖**本壳特有的运行期环境**（HarmonyOS HAP 的沙箱围栏、`hmdfs` 特性、能力缺口、打包路径等），因此在其它壳上不成立。
 
 ## 一、与父工程 `skills/` 的分工
 

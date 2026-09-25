@@ -5,7 +5,7 @@
  *
  * 产出 dsh-dist/（真实文件、无 Junction、无 .pnpm），随后由 tar 压成 dsh-dist.tar.gz 打入 resfile。
  * 前置：dsh 已构建（node scripts/build-dsh.mjs）。本脚本只依赖同级 ../deepseek-harness 与
- * ../dsh-market，与 deepseek-harness-desktop 无关。
+ * ../dsh-market，与 dsh-desktop 无关。
  *
  * 背景：pnpm deploy --legacy 物化的 node_modules 是「链接结构」（外部依赖为 Junction 指向
  * .pnpm store），打包分发后指向失效，故需物化为真实文件。且 deploy 不物化：① peerDependencies

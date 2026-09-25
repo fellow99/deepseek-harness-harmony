@@ -14,7 +14,7 @@
 |---|---|
 | 目标设备 | `3QC0226526001227` |
 | 系统 | HarmonyOS 6.1.0.135（API 24） |
-| 应用包名 | `org.fellow99.DeepseekHarnessHarmony` |
+| 应用包名 | `org.fellow99.dsh.DshDesktop` |
 | `hdc` | `D:/oh-workspace/command-line-tools/sdk/default/openharmony/toolchains/hdc.exe` |
 | 构建前置 | `DEVECO_SDK_HOME=d:\oh-workspace\command-line-tools\sdk\`；`export MSYS_NO_PATHCONV=1` |
 | 设备侧 `$DSH_HOME` | `<userData>/.dsh`（即 `/data/storage/el2/base/files/.dsh`） |
@@ -312,7 +312,7 @@
 | 项 | 内容 |
 |---|---|
 | 目的 | 落实 `[参考]` 引用 |
-| 步骤 | 核对 `deepseek-harness-desktop/scripts/fetch-runtime.mjs`（`:24-25` 版本常量、`:45` pnpm URL、`:64-85` 防截断、`:157-166` `isValidArtifact`、`:186` 版本戳、`:225-226` 写戳时机）与 `src/main/runtime.ts`（`:47-55` `dshShim`、`:73-125` `isUsableExecutable`、`:130-186` `setupMarketRuntime`、`:154` `chmod 0755`、`:181` PATH 前置） |
+| 步骤 | 核对 `dsh-desktop/scripts/fetch-runtime.mjs`（`:24-25` 版本常量、`:45` pnpm URL、`:64-85` 防截断、`:157-166` `isValidArtifact`、`:186` 版本戳、`:225-226` 写戳时机）与 `src/main/runtime.ts`（`:47-55` `dshShim`、`:73-125` `isUsableExecutable`、`:130-186` `setupMarketRuntime`、`:154` `chmod 0755`、`:181` PATH 前置） |
 | 期望 | 行号与语义一致 |
 | 证据 | 逐条对照结果 |
 

@@ -23,7 +23,7 @@ const TAG: string = 'PopupWindow';
 export class PopupWindowAdapter extends BaseAdapter {
   private abilityManager: AbilityManager;
   private popupWindowManager: PopupWindowManager;
-  private bundleName: string = 'org.fellow99.DeepseekHarnessHarmony';
+  private bundleName: string = 'org.fellow99.dsh.DshDesktop';
   private bundleFlags = bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION |
                         bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_METADATA;
 

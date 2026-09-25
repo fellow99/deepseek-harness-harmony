@@ -26,7 +26,7 @@
 
 **市场内部事实（源码级）**：`dsh-market/src/dsh-cli.ts` **不使用** `ctx.shell`（`:6-7` 注释：安装经 `node:child_process` 走，因为 shell 服务会拒写 profile 目录）。`probePnpm()` 以 `shell:false` spawn `pnpm --version`（`:617-638`）。`provisionPnpm()` 依次尝试 `corepack enable pnpm`、`npm install -g pnpm`，再用 `npm prefix -g` 并把 `<prefix>/bin` 追加进搜索目录（`:662-690`）。`spawnEnv()` 把 `toolSearchDirs()` 前置进 `PATH`（`:235-250`）；非 win32 时 `toolSearchDirs()` 返回 `PNPM_HOME`、`/opt/homebrew/bin`、`/usr/local/bin`、`~/.local/bin`、`~/Library/pnpm`、`~/.local/share/pnpm`，然后 `nodeBinDir`（= `dirname(nodeExecutable())`），最后 `extraPathDirs`（`:172-195`）。`dshArgv()` 经 `nodeExecutable()`（优先 `process.argv0` 若其为存在的绝对路径，否则 `process.execPath`）重入 CLI，或回退到裸 PATH `dsh`（`:50-54,328-340`）。`runDshPlugin()` 在 POSIX 上 detached spawn `dsh plugin --profile <p> add|remove <target>`，超时 15 分钟（`:895-972,252`）。**这些位置的共同前提是"PATH 上有可执行的 node 与 pnpm"——在本设备上不成立。**
 
-**桌面同级工程已用另一种方式解决了同构问题（作为参考读它）**：`deepseek-harness-desktop/scripts/fetch-runtime.mjs` 拉取**便携 Node 发行版**（`nodejs.org/dist`，`NODE_VERSION = '24.11.1'`，`:24`）加**单文件 standalone pnpm 二进制**（`https://github.com/pnpm/pnpm/releases/download/v<ver>/pnpm-linuxstatic-<arch>`，`PNPM_VERSION = '9.15.9'`，`:25,45`），落在 `runtime/`；`src/main/runtime.ts::setupMarketRuntime()` 生成 `dsh` shim 到 `userData/runtime-bin/`（POSIX 内容 `exec "<bundledNode>" "<dsh-dist>/lib/bin.js" "$@"`，`:53`），`chmod 0755` 捆绑二进制（`:154`），并对捆绑产物做**结构校验**（win32 校验完整 PE 映像；其它平台 `accessSync(X_OK)`，`:73-125`）以防截断下载遮蔽可用的系统 pnpm/node，最后把 `[binDir, pnpmDir, nodeDir, ...prev]` **前置**进 `process.env.PATH`（`:181`）——全部发生在 `startHost()` **之前**。本工程 `specs/201-dsh-market/spec.md:35,131` 把"便携 Node/pnpm 运行时与 `dsh plugin` 安装/删除通道"记为 `[NEEDS CLARIFICATION]`，本模块即来关闭它。
+**桌面同级工程已用另一种方式解决了同构问题（作为参考读它）**：`dsh-desktop/scripts/fetch-runtime.mjs` 拉取**便携 Node 发行版**（`nodejs.org/dist`，`NODE_VERSION = '24.11.1'`，`:24`）加**单文件 standalone pnpm 二进制**（`https://github.com/pnpm/pnpm/releases/download/v<ver>/pnpm-linuxstatic-<arch>`，`PNPM_VERSION = '9.15.9'`，`:25,45`），落在 `runtime/`；`src/main/runtime.ts::setupMarketRuntime()` 生成 `dsh` shim 到 `userData/runtime-bin/`（POSIX 内容 `exec "<bundledNode>" "<dsh-dist>/lib/bin.js" "$@"`，`:53`），`chmod 0755` 捆绑二进制（`:154`），并对捆绑产物做**结构校验**（win32 校验完整 PE 映像；其它平台 `accessSync(X_OK)`，`:73-125`）以防截断下载遮蔽可用的系统 pnpm/node，最后把 `[binDir, pnpmDir, nodeDir, ...prev]` **前置**进 `process.env.PATH`（`:181`）——全部发生在 `startHost()` **之前**。本工程 `specs/201-dsh-market/spec.md:35,131` 把"便携 Node/pnpm 运行时与 `dsh plugin` 安装/删除通道"记为 `[NEEDS CLARIFICATION]`，本模块即来关闭它。
 
 ### 1.2 解决的问题
 
@@ -69,7 +69,7 @@
 | 设备 `3QC0226526001227`（HarmonyOS 6.1.0.135 / API 24）上的实测记录 | `process.execPath`、`node -v`、`node -e`、HNP 设备布局、`symlink`/`chmod` 行为 | `[设备实测]` + `docs/鸿蒙环境能力清单-v0.1.5.md` 行号 |
 | `specs/010-tool-bash/spec.md` / `specs/201-dsh-market/spec.md` / `specs/301-skill-runtime-capabilities/spec.md` | 平台基线、市场 [NEEDS CLARIFICATION]、根因分层与安全语义 | `[已归档规范]` + `file:line` |
 | 本工程源码与其引用的第三方源码（`dsh-market/src/dsh-cli.ts`、`src-main/main.js`、`scripts/*.mjs`） | 市场内部 spawn 点、main.js 接线点、构建脚本触点 | `[源码]` + `file:line` |
-| `deepseek-harness-desktop/scripts/fetch-runtime.mjs` / `src/main/runtime.ts` | 同构问题的参考解法 | `[参考]` + `file:line` |
+| `dsh-desktop/scripts/fetch-runtime.mjs` / `src/main/runtime.ts` | 同构问题的参考解法 | `[参考]` + `file:line` |
 | OpenHarmony / 华为官方文档（受限权限清单、HNP 指南、`binary-sign-tool`、AGC ACL / 二进制证书） | 权限定义、`.permission` 节、HNP 事实、ACL 机制 | `[官方]` + 命名来源（无公开行号者只给条目名） |
 | 社区 / 第三方证据（Qt porting wiki / QTBUG-146621、Node.js 平台支持表、`dsh-ohos-patch`） | B1 的官方确认、Node 的 Experimental 状态、`--ignore-scripts` 先例 | `[研究]`（可能未证实，逐条标 `未验证`） |
 | 本规范的**设计决策**（注入顺序、校验算法、降级规则、shim 内容、权限清单） | 由本模块自行确定、可被评审 | `[设计]` |
@@ -134,7 +134,7 @@
 | `process.platform` / `process.arch` | `openharmony` / `arm64` | `[设备实测]` `docs/鸿蒙环境能力清单-v0.1.5.md:424` |
 | Node 版本（宿主进程） | `22.17.0`（Electron 主进程即 Node） | `[设备实测]` `docs/鸿蒙环境能力清单-v0.1.5.md:424` |
 | `process.execPath` | `/data/app/electron.org/electron_1.0/bin/electron/electron`，**不存在（`ENOENT`）** | `[设备实测]` `docs/鸿蒙环境能力清单-v0.1.5.md:424,426` |
-| 应用包名 | `org.fellow99.DeepseekHarnessHarmony` | `[已归档规范]` `specs/202-plugin-fs-mutate/test-cases.md:15` |
+| 应用包名 | `org.fellow99.dsh.DshDesktop` | `[已归档规范]` `specs/202-plugin-fs-mutate/test-cases.md:15` |
 | `$DSH_HOME` | `<userData>/.dsh`（`/data/storage/el2/base/files/.dsh`） | `[源码]` `src-main/main.js:466-469` |
 
 ### 3.2 设备上的 HNP 现状（路径 A / C 的事实基础）

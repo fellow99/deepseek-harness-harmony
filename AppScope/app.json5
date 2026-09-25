@@ -1,6 +1,6 @@
 {
   "app": {
-    "bundleName": "org.fellow99.DeepseekHarnessHarmony",
+    "bundleName": "org.fellow99.dsh.DshDesktop",
     "vendor": "example",
     "versionCode": 1005,
     "versionName": "0.1.5",

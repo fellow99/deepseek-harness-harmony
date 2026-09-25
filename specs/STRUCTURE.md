@@ -1,13 +1,13 @@
 # STRUCTURE.md — 目录文件结构
 
-> deepseek-harness-harmony 整个工程的目录与文件结构记录（源码即真理，基于实际目录扫描生成）。
+> dsh-desktop-hos 整个工程的目录与文件结构记录（源码即真理，基于实际目录扫描生成）。
 > Last Updated: 2026-09-04
 
 ## 1. 顶层目录
 
 ```
-deepseek-harness-harmony/（鸿蒙 HAP 工程）
-├── AppScope/          # 应用 scope：app.json5（包名 org.fellow99.DeepseekHarnessHarmony）+ 图标 + 签名配置
+dsh-desktop-hos/（鸿蒙 HAP 工程）
+├── AppScope/          # 应用 scope：app.json5（包名 org.fellow99.dsh.DshDesktop）+ 图标 + 签名配置
 ├── electron/          # 入口模块（type: entry，copy 自 ../harmonypc-electron，含原生 SO）
 ├── web_engine/        # 桥接 HAR（ArkTS 桥接层 + resfile 承载 dsh 产物）
 ├── src-main/          # 主进程编排源码（main.js，编译/复制到 resfile/resources/app/）
@@ -124,7 +124,7 @@ patches/
 |---|---|---|
 | 应用签名 | `build-profile.json5` → app.signingConfigs | 含调试签名 material（注意：含硬编码口令，见安全审查） |
 | 目标 SDK | `build-profile.json5` → targetSdkVersion `6.1.1(24)` | compatibleSdkVersion `5.0.5(17)` |
-| 应用包名 | `AppScope/app.json5` | `org.fellow99.DeepseekHarnessHarmony` |
+| 应用包名 | `AppScope/app.json5` | `org.fellow99.dsh.DshDesktop` |
 | 设备类型 | `electron/src/main/module.json5` deviceTypes | `["2in1", "tablet"]` |
 | 权限声明 | `web_engine/src/main/module.json5` requestPermissions | ~28 项（INTERNET/PasteBoard/MICROPHONE/CAMERA 等） |
 | 运行时产物收集目标 | `web_engine/src/main/resources/resfile/resources/app/` | main.js + dsh-dist.tar.gz |

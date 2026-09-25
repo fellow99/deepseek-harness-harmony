@@ -1,11 +1,11 @@
 # overall-spec.md — 整体规格
 
-> deepseek-harness-harmony 系统级功能规格（技术无关，描述 WHAT 与 WHY）。
+> dsh-desktop-hos 系统级功能规格（技术无关，描述 WHAT 与 WHY）。
 > Last Updated: 2026-09-04
 
 ## 1. 系统目的与目标用户
 
-**目的**：在鸿蒙/OpenHarmony 设备上提供 deepseek-harness（dsh）的一等公民桌面应用，对标 `deepseek-harness-desktop`，而非「包一层 `dsh web`」的粗壳。
+**目的**：在鸿蒙/OpenHarmony 设备上提供 deepseek-harness（dsh）的一等公民桌面应用，对标 `dsh-desktop`，而非「包一层 `dsh web`」的粗壳。
 
 **目标用户**：鸿蒙 2in1 / tablet 设备上使用 AI agent harness 进行会话、agent 编排、工具调用的用户。
 
@@ -78,4 +78,4 @@
 - `../deepseek-harness`（dsh Host，patch 基线 dsh-v0.1.2-rc.1）。
 - `../dsh-market`（插件市场，1.26.0）。
 - `../harmonypc-electron`（Electron-on-鸿蒙运行时，Electron 37）。
-- `../deepseek-harness-desktop`（仅架构参考，无构建依赖）。
+- `../dsh-desktop`（仅架构参考，无构建依赖）。

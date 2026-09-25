@@ -8,7 +8,7 @@
 
 ### 1.1 目的 —— 为什么存在这个模块
 
-把 [dsh-market](https://github.com/dsh-market/dsh-market)（DeepSeek Harness 的可视化插件市场，npm 包 `dshmarket`，版本 `1.26.0`）**内置**到本工程（deepseek-harness-harmony，鸿蒙桌面版）封装的 dsh 环境中，使其随 Host **自动加载**，并让用户在鸿蒙设备的桌面应用内浏览插件市场目录、查看已装插件。
+把 [dsh-market](https://github.com/dsh-market/dsh-market)（DeepSeek Harness 的可视化插件市场，npm 包 `dshmarket`，版本 `1.26.0`）**内置**到本工程（dsh-desktop-hos，鸿蒙桌面版）封装的 dsh 环境中，使其随 Host **自动加载**，并让用户在鸿蒙设备的桌面应用内浏览插件市场目录、查看已装插件。
 
 dsh-market 是一个前后端混合的 Cordis 插件：宿主端（`lib/`）挂载 `/dsh-market/*` HTTP 路由并读写 profile 目录，浏览器端（`client/`）注入设置页 UI。本模块负责「把它作为一个 bundle 装进 desktop profile 并打通其物化、复制与运行配置」——**不改 dsh-market 与 dsh 的上游代码**，只描述「如何集成到本工程」。
 

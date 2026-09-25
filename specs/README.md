@@ -1,6 +1,6 @@
 # 规格文档索引
 
-**项目名称：** deepseek-harness-harmony
+**项目名称：** dsh-desktop-hos
 **版本：** N/A
 **技术栈：** Electron-on-鸿蒙（Electron 37 / Node 22.17.0）+ ArkTS + HarmonyOS（封装 deepseek-harness）
 **文档生成时间：** 2026-09-04
@@ -209,4 +209,4 @@
 
 ---
 
-**文档维护者：** deepseek-harness-harmony 开发团队
+**文档维护者：** dsh-desktop-hos 开发团队

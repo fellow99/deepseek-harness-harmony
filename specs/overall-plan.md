@@ -1,6 +1,6 @@
 # overall-plan.md — 整体技术方案
 
-> deepseek-harness-harmony 系统级技术方案（HOW，各模块 plan 总纲）。
+> dsh-desktop-hos 系统级技术方案（HOW，各模块 plan 总纲）。
 > Last Updated: 2026-09-04
 
 ## 1. 技术上下文

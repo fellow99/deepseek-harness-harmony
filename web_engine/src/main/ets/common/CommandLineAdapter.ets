@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// App customization (deepseek-harness-harmony, runtime-overlays):
+// App customization (dsh-desktop-hos, runtime-overlays):
 // `--inspect` opens a Node inspector whose context exposes `require`, which lets
 // anyone with `hdc` fully control the host process. Upstream adds it
 // unconditionally; this copy adds it only while the installed package reports a

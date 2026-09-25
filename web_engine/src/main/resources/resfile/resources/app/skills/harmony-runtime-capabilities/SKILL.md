@@ -179,5 +179,5 @@ Prefer keeping artifacts inside the workspace and telling the user where they ar
 
 The project's own capability inventory, including the root cause and recovery plan for
 each gap, lives in the repository at
-`deepseek-harness-harmony/docs/鸿蒙环境能力清单-v0.1.5.md`. Read it when you need the
+`dsh-desktop-hos/docs/鸿蒙环境能力清单-v0.1.5.md`. Read it when you need the
 reasoning behind a limitation or want to know whether it is fixable.

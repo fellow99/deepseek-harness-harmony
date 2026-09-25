@@ -12,7 +12,7 @@
 |---|---|
 | 目标设备 | `3QC0226526001227` |
 | 系统 | HarmonyOS 6.1.0.135（API 24） |
-| 应用包名 | `org.fellow99.DeepseekHarnessHarmony` |
+| 应用包名 | `org.fellow99.dsh.DshDesktop` |
 | `hdc` | `D:/oh-workspace/command-line-tools/sdk/default/openharmony/toolchains/hdc.exe` |
 | 构建前置 | `DEVECO_SDK_HOME=d:\oh-workspace\command-line-tools\sdk\`；`export MSYS_NO_PATHCONV=1` |
 | 会话工作区 | `/data/storage/el2/base/files/aaa`（下称 `$WS`） |

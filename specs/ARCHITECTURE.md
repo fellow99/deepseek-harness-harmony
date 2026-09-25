@@ -1,6 +1,6 @@
 # ARCHITECTURE.md — 整体架构
 
-> deepseek-harness-harmony 系统整体架构：进程模型、分层、数据流、关键决策。
+> dsh-desktop-hos 系统整体架构：进程模型、分层、数据流、关键决策。
 > Last Updated: 2026-09-04
 
 ## 1. 定位
@@ -12,7 +12,7 @@
 ## 2. 进程模型
 
 ```
-┌─ 鸿蒙 HAP（deepseek-harness-harmony）───────────────────────────────┐
+┌─ 鸿蒙 HAP（dsh-desktop-hos）───────────────────────────────┐
 │  electron 模块（entry）                                            │
 │    ├─ 原生 SO：libelectron.so + libadapter.so + libffmpeg.so + libc++_shared.so │
 │    └─ EntryAbility → 启动 Electron-on-鸿蒙 运行时                   │
@@ -115,12 +115,12 @@ EntryAbility 启动 Electron-on-鸿蒙
 ## 8. 相关工程关系
 
 ```
-deepseek-harness-harmony（本工程：鸿蒙 HAP）
+dsh-desktop-hos（本工程：鸿蒙 HAP）
         │ 构建期消费 3 个同级工程（sibling 源码引用 + copy 产物，均无 submodule）
         ├─ ../deepseek-harness（dsh Host）             ← build-dsh：patch + pnpm build
         ├─ ../dsh-market（插件市场）                    ← build-dsh + collect-dsh：build + 物化
         └─ ../harmonypc-electron（Electron 37 运行时） ← collect-runtime：copy electron + web_engine + SO
 
-deepseek-harness-desktop（Electron 桌面壳）
+dsh-desktop（Electron 桌面壳）
         └─ 仅「架构设计参考」：复用架构决策 + patch + 主进程编排逻辑；不参与本工程构建
 ```

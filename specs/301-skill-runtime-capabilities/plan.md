@@ -135,7 +135,7 @@
 
 ### 4.2 桌面版对照（C.2）
 
-`deepseek-harness-desktop/profiles/desktop/cordis.patch.yml` **只**覆盖 `web-runtime` 与 `dsh-market`，没有禁用 `subprocess` / `sandbox` / `permission`，也没有禁用 preset 里的 `tool-bash` / `tool-fs-search`。桌面版因此有终端、有内容搜索。**鸿蒙版多出来的限制，是本工程自己在 L3 加的**，动因是 L2（C.2 `:91-93`）。
+`dsh-desktop/profiles/desktop/cordis.patch.yml` **只**覆盖 `web-runtime` 与 `dsh-market`，没有禁用 `subprocess` / `sandbox` / `permission`，也没有禁用 preset 里的 `tool-bash` / `tool-fs-search`。桌面版因此有终端、有内容搜索。**鸿蒙版多出来的限制，是本工程自己在 L3 加的**，动因是 L2（C.2 `:91-93`）。
 
 ### 4.3 逐项根因结论（C.3）
 

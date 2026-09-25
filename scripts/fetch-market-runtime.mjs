@@ -50,7 +50,7 @@ const TARGET_PLATFORM = 'openharmony';
 const TARGET_ARCH = 'arm64';
 
 /**
- * pnpm 版本固定，语义对齐 deepseek-harness-desktop 的 `PNPM_VERSION = '9.15.9'`（spec FR-1.2）。
+ * pnpm 版本固定，语义对齐 dsh-desktop 的 `PNPM_VERSION = '9.15.9'`（spec FR-1.2）。
  * ⚠️ `pnpm-linuxstatic-arm64` 是 **Linux** 静态目标，它在 OpenHarmony 上能否直接运行 **未验证**
  * （plan §16 Q3 / 真机 TC-D7）；此处沿用同构解，真机不通过则需第三方 ohos 构建。
  */

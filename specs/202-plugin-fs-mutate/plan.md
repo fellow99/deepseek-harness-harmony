@@ -110,7 +110,7 @@
 |---|---|
 | `plugins/README.md` | 目录定位、约定（命名 / 目录名=包名 / 编译期打入 / 运行期全默认加载）、与父工程 `dsh-plugins/` 的分工、**新增插件步骤**、现有插件索引 |
 | `<父工程>/dsh-plugins/README.md` | 目录定位（通用可插拔）、约定（`dsh-plugin-XXX`）、指向本工程 `plugins/` 作为专用插件归位点 |
-| `deepseek-harness-harmony/README.md` / `README_zh.md` | 插件约定章节（两侧分工）+ stage ② 描述 + 目录结构树 + 插件文档链接 |
+| `dsh-desktop-hos/README.md` / `README_zh.md` | 插件约定章节（两侧分工）+ stage ② 描述 + 目录结构树 + 插件文档链接 |
 | 父工程 `README.md` / `README_zh.md` | Repository layout 表、Roles at a glance 表、"Plugin convention" 节 |
 
 ## 5. 数据流

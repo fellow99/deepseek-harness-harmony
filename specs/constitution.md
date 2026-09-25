@@ -1,6 +1,6 @@
 # constitution.md — 宪法原则
 
-> deepseek-harness-harmony 项目开发原则与治理规则。
+> dsh-desktop-hos 项目开发原则与治理规则。
 > 本文档从代码库与工程规划中**提取**（descriptive，非 prescriptive），描述本项目实际遵循的原则。
 > Last Updated: 2026-09-04
 

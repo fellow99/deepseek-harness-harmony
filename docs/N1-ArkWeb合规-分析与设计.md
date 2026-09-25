@@ -146,7 +146,7 @@ Electron 主进程 src-main/main.js
 **运行步骤（设备就绪后）**
 1. 让应用在 `DSH_ARKWEB_PROBE=1` 下运行（debug 构建）；
 2. `hdc shell hilog -x | grep "\[probe\] 认证 URL"` 取得 `http://…?token=…`；
-3. `hdc shell aa start -a ArkWebProbeAbility -b org.fellow99.DeepseekHarnessHarmony --ps url "<认证URL>"`；
+3. `hdc shell aa start -a ArkWebProbeAbility -b org.fellow99.dsh.DshDesktop --ps url "<认证URL>"`；
 4. `hdc shell hilog -x | grep ArkWebProbe` 读取 `PROBE_RESULT={…}` 与 `onErrorReceive` / `onHttpErrorReceive` / `console[…]`；
 5. 记录 §6 表中 P1–P4 结论（P5 交互、P6 性能另测）。
 

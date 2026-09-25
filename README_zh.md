@@ -25,7 +25,7 @@
 
 DeepSeek Harness（`dsh`）是 DeepSeek AI 开源的 agent harness，基于「一切皆插件」架构（由 [Cordis](https://github.com/cordiverse/cordis) 驱动），原生入口是 `dsh web`（浏览器 Web UI）。
 
-本工程把 dsh Web UI 封装进鸿蒙原生桌面壳（Electron-on-鸿蒙运行时），100% 复用 dsh 前端，让 agent harness 在鸿蒙设备上像一等公民桌面应用一样运行。它**不是**「包一层 `dsh web` 指向 localhost」的粗壳，而是构建在 dsh 现有架构之上、对标 `deepseek-harness-desktop` 的一等公民桌面应用。
+本工程把 dsh Web UI 封装进鸿蒙原生桌面壳（Electron-on-鸿蒙运行时），100% 复用 dsh 前端，让 agent harness 在鸿蒙设备上像一等公民桌面应用一样运行。它**不是**「包一层 `dsh web` 指向 localhost」的粗壳，而是构建在 dsh 现有架构之上、对标 `dsh-desktop` 的一等公民桌面应用。
 
 ## 核心设计
 
@@ -141,7 +141,7 @@ tar -czf web_engine/src/main/resources/resfile/resources/app/dsh-dist.tar.gz --f
 | `../dsh-plugins/`（父工程） | **通用**、可插拔插件 —— 不依赖任何特定壳的补丁，任何壳都能消费 | `dsh-plugin-XXX` |
 | `plugins/`（本工程） | **本工程专用**插件 —— 依赖本壳的补丁集 / profile / 运行期适配；编译期打入 HAP，运行期**全部默认加载** | `harmony-plugin-XXX` |
 
-两种情况下目录名都等于 npm 包名（裸包名 / 非 scoped）。判断一个插件该放哪边：*「把它装到另一个 dsh 壳（例如 `deepseek-harness-desktop`）上，它还能工作吗？」* 能 → 通用，放父工程 `dsh-plugins/`；不能 → 本工程 `plugins/`。详见 [`plugins/README.md`](plugins/README.md) 与 [`../dsh-plugins/README.md`](../dsh-plugins/README.md)。
+两种情况下目录名都等于 npm 包名（裸包名 / 非 scoped）。判断一个插件该放哪边：*「把它装到另一个 dsh 壳（例如 `dsh-desktop`）上，它还能工作吗？」* 能 → 通用，放父工程 `dsh-plugins/`；不能 → 本工程 `plugins/`。详见 [`plugins/README.md`](plugins/README.md) 与 [`../dsh-plugins/README.md`](../dsh-plugins/README.md)。
 
 - **物化自动完成（阶段 ②）** —— `scripts/collect-dsh.mjs` 的 `collectPlugins()` 通配 `plugins/harmony-plugin-*/`，读取各插件 `package.json` 的 `name`，把该目录复制到 `dsh-dist/node_modules/<name>/`（与 `dshmarket` 相同的非 scoped 布局）。落地目录名取自 `package.json`，因此**新增插件无需改动构建脚本**。
 - **失败即硬报错** —— `plugins/` 存在、但匹配到的插件缺可读的 `package.json`，或包名不符 `harmony-plugin-*`，收集阶段直接非零退出。`plugins/` 不存在或没有 `harmony-plugin-*` 目录时，只打印一行日志、不做任何事。
@@ -260,9 +260,9 @@ powershell -ExecutionPolicy Bypass -File scripts\build-hap.ps1 -BuildMode releas
 
 ```bash
 hdc tconn <设备IP>:<端口>   # 先建立无线（IP）调试连接；端口见设备 开发者选项 → 无线调试
-hdc uninstall org.fellow99.DeepseekHarnessHarmony   # 首装/换产物需先卸载，清掉旧 userData 中过期 dsh-dist
+hdc uninstall org.fellow99.dsh.DshDesktop   # 首装/换产物需先卸载，清掉旧 userData 中过期 dsh-dist
 hdc app install -r electron/build/default/outputs/default/electron-default-signed.hap
-hdc shell aa start -a EntryAbility -b org.fellow99.DeepseekHarnessHarmony
+hdc shell aa start -a EntryAbility -b org.fellow99.dsh.DshDesktop
 ```
 
 > ⚠️ **发布签名的包无法侧载。** 对 release 签名的包执行 `hdc app install` 会报 `code:9568322 ... signature verification failed due to not trusted app source`。真机回归请用 `-BuildMode release -SignMode debug`（release 编译 + debug 签名）；release 签名的包只用于 AppGallery 提交。
@@ -350,7 +350,7 @@ hdc shell uitest uiInput click <x> <y>                     # 点击**可以**触
 ```
 
 - ⚠️ `uitest uiInput text` 与 `uiInput keyEvent` **无法**触达 Web 内容（编辑器不是原生控件）—— 文本输入请用 inspector 的 `Input.insertText`。
-- dump 覆盖**整屏**，因此系统设置等其他窗口会一并出现。点击前先 `hdc shell aa start -a EntryAbility -b org.fellow99.DeepseekHarnessHarmony` 再重新 dump，确认应用在前台。
+- dump 覆盖**整屏**，因此系统设置等其他窗口会一并出现。点击前先 `hdc shell aa start -a EntryAbility -b org.fellow99.dsh.DshDesktop` 再重新 dump，确认应用在前台。
 
 #### 宿主起来了吗？在哪个端口？
 
@@ -410,9 +410,9 @@ powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1   # release�
 **安装与启动**
 
 ```bash
-hdc uninstall org.fellow99.DeepseekHarnessHarmony
+hdc uninstall org.fellow99.dsh.DshDesktop
 hdc app install -r electron/build/default/outputs/default/electron-default-signed.hap
-hdc shell aa start -a EntryAbility -b org.fellow99.DeepseekHarnessHarmony
+hdc shell aa start -a EntryAbility -b org.fellow99.dsh.DshDesktop
 ```
 
 > 若 debug 包仍报权限授予失败，说明 `.p7b` 尚未携带该受限权限 —— 重复上面的 DevEco 重生成（确认 ACL 审批已通过）后再重新构建。
@@ -481,7 +481,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1   # -Task App
 
 ```
 （同级目录）
-├── deepseek-harness-harmony/      # 本工程（鸿蒙 HAP，桌面版鸿蒙移植）
+├── dsh-desktop-hos/      # 本工程（鸿蒙 HAP，桌面版鸿蒙移植）
 │   ├── AppScope/                  # 应用 scope（图标/名称/签名）
 │   ├── electron/                  # 入口模块（copy 自 harmonypc-electron，含 SO）
 │   ├── web_engine/                # 桥接 HAR（ArkTS 桥接层 + resfile 承载 dsh 产物）
@@ -511,7 +511,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1   # -Task App
     └── cordis.patch.yml           # loader insert 声明（{ id: dsh-market, name: dshmarket }）
 ```
 
-> `../deepseek-harness-desktop` 为**架构设计参考**（复用其架构决策 + patch + 主进程编排逻辑），不参与本工程构建/打包。
+> `../dsh-desktop` 为**架构设计参考**（复用其架构决策 + patch + 主进程编排逻辑），不参与本工程构建/打包。
 
 ## 相关文档
 
@@ -523,7 +523,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1   # -Task App
 - [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)（同级目录 `../deepseek-harness`）—— 被封装宿主；其 `docs/` 目录含完整架构文档
 - [dsh-market](https://github.com/dsh-market/dsh-market)（同级目录 `../dsh-market`）—— 内置插件市场（npm 包 `dshmarket`），经 `collect-dsh.mjs` 物化
 - [harmonypc-electron](https://atomgit.com/jianguoxu/harmonypc-electron)（同级目录 `../harmonypc-electron`）—— Electron-on-鸿蒙运行时
-- [deepseek-harness-desktop](https://github.com/fellow99/deepseek-harness-desktop)（同级目录 `../deepseek-harness-desktop`）—— 架构设计参考（Electron 桌面壳）
+- [dsh-desktop](https://github.com/fellow99/dsh-desktop)（同级目录 `../dsh-desktop`）—— 架构设计参考（Electron 桌面壳）
 
 ## 许可证
 

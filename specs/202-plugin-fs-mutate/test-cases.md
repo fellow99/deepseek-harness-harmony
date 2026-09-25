@@ -11,7 +11,7 @@
 |---|---|
 | 目标设备 | `3QC0226526001227` |
 | 系统 | HarmonyOS 6.1.0.135（API 24） |
-| 应用包名 | `org.fellow99.DeepseekHarnessHarmony` |
+| 应用包名 | `org.fellow99.dsh.DshDesktop` |
 | `hdc` | `D:/oh-workspace/command-line-tools/sdk/default/openharmony/toolchains/hdc.exe` |
 | 构建前置 | `DEVECO_SDK_HOME=d:\oh-workspace\command-line-tools\sdk\`；`export MSYS_NO_PATHCONV=1` |
 | 设备侧 `$DSH_HOME` | `<userData>/.dsh`（即 `/data/storage/el2/base/files/.dsh`） |
@@ -29,7 +29,7 @@
 | 项 | 内容 |
 |---|---|
 | 目的 | 验证 `collectPlugins()` 从本工程 `plugins/` 读取，并按包名落地 |
-| 前置 | 插件位于 `deepseek-harness-harmony/plugins/harmony-plugin-fs-mutate/` |
+| 前置 | 插件位于 `dsh-desktop-hos/plugins/harmony-plugin-fs-mutate/` |
 | 步骤 | 1. `node scripts/collect-dsh.mjs`<br>2. 检查 `dsh-dist/node_modules/harmony-plugin-fs-mutate/package.json` 是否存在<br>3. 检查该 `package.json` 的 `name` 字段 |
 | 期望 | 文件存在；`name` == `"harmony-plugin-fs-mutate"` |
 | 证据 | 文件路径 + `name` 字段输出 |

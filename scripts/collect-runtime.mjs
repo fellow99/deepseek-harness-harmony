@@ -421,7 +421,7 @@ function stage7Guards(manifest) {
 
   // 7.4 App 身份：AppScope bundleName + 4 adapter 无通用字面量残留
   const appBundleName = readAppBundleName();
-  const expectedBundle = 'org.fellow99.DeepseekHarnessHarmony';
+  const expectedBundle = 'org.fellow99.dsh.DshDesktop';
   guard(appBundleName === expectedBundle, `AppScope bundleName = ${appBundleName}`);
   const generic = manifest.bundleNameRewrite?.from ?? 'com.huawei.ohos_electron';
   for (const rel of manifest.bundleNameRewrite?.adapters ?? []) {

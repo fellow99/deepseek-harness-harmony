@@ -1,6 +1,6 @@
 # overall-data-model.md — 数据模型
 
-> deepseek-harness-harmony 全局数据实体、状态机、目录布局。
+> dsh-desktop-hos 全局数据实体、状态机、目录布局。
 > Last Updated: 2026-09-04
 
 ## 1. 核心实体

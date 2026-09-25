@@ -25,7 +25,7 @@ Source: `AppScope/app.json5`. `versionCode` must be a number and must **strictly
 
 DeepSeek Harness (`dsh`) is an open-source agent harness by DeepSeek AI, built on an "everything is a plugin" architecture (driven by [Cordis](https://github.com/cordiverse/cordis)); its native entry is `dsh web` (a browser Web UI).
 
-This project wraps the dsh Web UI in a native HarmonyOS desktop shell (Electron-on-HarmonyOS runtime), 100% reusing the dsh frontend, making the agent harness run like a first-class desktop app on HarmonyOS devices. It is **not** a thin "wrap `dsh web` pointing at localhost" shell, but a first-class desktop app built on dsh's existing architecture, benchmarked against `deepseek-harness-desktop`.
+This project wraps the dsh Web UI in a native HarmonyOS desktop shell (Electron-on-HarmonyOS runtime), 100% reusing the dsh frontend, making the agent harness run like a first-class desktop app on HarmonyOS devices. It is **not** a thin "wrap `dsh web` pointing at localhost" shell, but a first-class desktop app built on dsh's existing architecture, benchmarked against `dsh-desktop`.
 
 ## Core design
 
@@ -141,7 +141,7 @@ This wrapper's plugins are split by **who can consume them**:
 | `../dsh-plugins/` (parent workspace) | **Generic**, pluggable plugins — no dependency on any wrapper-specific patch, so any shell can consume them | `dsh-plugin-XXX` |
 | `plugins/` (this project) | **This project's own** plugins — they depend on this wrapper's patch set / profile / runtime adaptations; baked into the HAP at build time and **all loaded by default** at runtime | `harmony-plugin-XXX` |
 
-Either way the directory name equals the npm package name (a bare / unscoped name). The test for which side a plugin belongs on: *"would it still work if installed into another dsh shell (e.g. `deepseek-harness-desktop`)?"* Yes → generic, parent `dsh-plugins/`; no → this project's `plugins/`. See [`plugins/README.md`](plugins/README.md) and [`../dsh-plugins/README.md`](../dsh-plugins/README.md).
+Either way the directory name equals the npm package name (a bare / unscoped name). The test for which side a plugin belongs on: *"would it still work if installed into another dsh shell (e.g. `dsh-desktop`)?"* Yes → generic, parent `dsh-plugins/`; no → this project's `plugins/`. See [`plugins/README.md`](plugins/README.md) and [`../dsh-plugins/README.md`](../dsh-plugins/README.md).
 
 - **Materialization is automatic (stage ②).** `scripts/collect-dsh.mjs` → `collectPlugins()` globs `plugins/harmony-plugin-*/`, reads each plugin's `package.json` `name`, and copies the directory to `dsh-dist/node_modules/<name>/` — the same non-scoped layout `dshmarket` uses. The destination name comes from `package.json`, so **a new plugin needs no build-script change**.
 - **Failure is loud.** If `plugins/` exists but a matched plugin has no readable `package.json`, or its name does not match `harmony-plugin-*`, the collect stage exits non-zero. If `plugins/` is absent or holds no `harmony-plugin-*` directory, the stage is a no-op with one log line.
@@ -260,9 +260,9 @@ Install the debug build over HDC and launch it:
 
 ```bash
 hdc tconn <device-ip>:<port>   # wireless (IP) debugging first; the port is shown by Developer options → Wireless debugging
-hdc uninstall org.fellow99.DeepseekHarnessHarmony   # uninstall first on fresh install / artifact change, to clear stale dsh-dist in userData
+hdc uninstall org.fellow99.dsh.DshDesktop   # uninstall first on fresh install / artifact change, to clear stale dsh-dist in userData
 hdc app install -r electron/build/default/outputs/default/electron-default-signed.hap
-hdc shell aa start -a EntryAbility -b org.fellow99.DeepseekHarnessHarmony
+hdc shell aa start -a EntryAbility -b org.fellow99.dsh.DshDesktop
 ```
 
 > ⚠️ **Release-signed packages cannot be side-loaded.** `hdc app install` on a release-signed package fails with `code:9568322 ... signature verification failed due to not trusted app source`. For on-device regression use `-BuildMode release -SignMode debug` (release-compiled, debug-signed); release-signed packages exist only for AppGallery submission.
@@ -350,7 +350,7 @@ hdc shell uitest uiInput click <x> <y>                     # clicks DO reach the
 ```
 
 - ⚠️ `uitest uiInput text` and `uiInput keyEvent` do **not** reach Web content (the editor is not a native control) — use the inspector's `Input.insertText` for text.
-- The dump spans the whole screen, so other windows (system Settings, for example) appear alongside the app. Run `hdc shell aa start -a EntryAbility -b org.fellow99.DeepseekHarnessHarmony`, then re-dump, to confirm the app is in the foreground before clicking.
+- The dump spans the whole screen, so other windows (system Settings, for example) appear alongside the app. Run `hdc shell aa start -a EntryAbility -b org.fellow99.dsh.DshDesktop`, then re-dump, to confirm the app is in the foreground before clicking.
 
 #### Is the Host up, and on which port?
 
@@ -424,9 +424,9 @@ requested signing mode (see [Signing](#signing-externalized--secrets-never-commi
 **Install & launch**
 
 ```bash
-hdc uninstall org.fellow99.DeepseekHarnessHarmony
+hdc uninstall org.fellow99.dsh.DshDesktop
 hdc app install -r electron/build/default/outputs/default/electron-default-signed.hap
-hdc shell aa start -a EntryAbility -b org.fellow99.DeepseekHarnessHarmony
+hdc shell aa start -a EntryAbility -b org.fellow99.dsh.DshDesktop
 ```
 
 > If install still reports a permission grant failure for a debug build, the `.p7b` does not yet carry the
@@ -518,7 +518,7 @@ This project and the 3 consumed projects plus 1 architecture-reference project l
 
 ```
 (sibling directories)
-├── deepseek-harness-harmony/      # This project (HarmonyOS HAP, HarmonyOS desktop port)
+├── dsh-desktop-hos/      # This project (HarmonyOS HAP, HarmonyOS desktop port)
 │   ├── AppScope/                  # App scope (icon/name/signing)
 │   ├── electron/                  # Entry module (copied from harmonypc-electron, contains SOs)
 │   ├── web_engine/                # Bridge HAR (ArkTS bridge layer + resfile carries dsh artifacts)
@@ -548,7 +548,7 @@ This project and the 3 consumed projects plus 1 architecture-reference project l
     └── cordis.patch.yml           # loader insert declaration ({ id: dsh-market, name: dshmarket })
 ```
 
-> `../deepseek-harness-desktop` is an **architecture-design reference** (reuses its architecture decisions + patches + main-process orchestration logic) and does not participate in this project's build/packaging.
+> `../dsh-desktop` is an **architecture-design reference** (reuses its architecture decisions + patches + main-process orchestration logic) and does not participate in this project's build/packaging.
 
 ## Related docs
 
@@ -560,7 +560,7 @@ This project and the 3 consumed projects plus 1 architecture-reference project l
 - [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) (sibling directory `../deepseek-harness`) — the wrapped host; its `docs/` directory contains full architecture docs
 - [dsh-market](https://github.com/dsh-market/dsh-market) (sibling directory `../dsh-market`) — the built-in visual plugin marketplace (npm package `dshmarket`), materialized via `collect-dsh.mjs`
 - [harmonypc-electron](https://atomgit.com/jianguoxu/harmonypc-electron) (sibling directory `../harmonypc-electron`) — the Electron-on-HarmonyOS runtime
-- [deepseek-harness-desktop](https://github.com/fellow99/deepseek-harness-desktop) (sibling directory `../deepseek-harness-desktop`) — architecture-design reference (Electron desktop shell)
+- [dsh-desktop](https://github.com/fellow99/dsh-desktop) (sibling directory `../dsh-desktop`) — architecture-design reference (Electron desktop shell)
 
 ## License
 

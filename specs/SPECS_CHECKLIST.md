@@ -1,6 +1,6 @@
 # SPECS_CHECKLIST.md — 规格检查清单
 
-> deepseek-harness-harmony 规范文档完成情况追踪（2026-09-04，最后更新 2026-09-18）。
+> dsh-desktop-hos 规范文档完成情况追踪（2026-09-04，最后更新 2026-09-18）。
 
 ## 1. 项目级文档
 

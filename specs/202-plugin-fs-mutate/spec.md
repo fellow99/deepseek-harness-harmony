@@ -8,10 +8,10 @@
 
 ### 1.1 目的 —— 为什么存在这个模块
 
-把 `delete` / `move` / `copy` / `chmod` 四个模型可见的文件系统工具，以 **deepseek-harness-harmony 工程内专用插件**的身份（`plugins/harmony-plugin-fs-mutate/`）交付，并同时确立本工程内的两条插件目录约定：
+把 `delete` / `move` / `copy` / `chmod` 四个模型可见的文件系统工具，以 **dsh-desktop-hos 工程内专用插件**的身份（`plugins/harmony-plugin-fs-mutate/`）交付，并同时确立本工程内的两条插件目录约定：
 
 - `<父工程>/dsh-plugins/` —— 存放**通用的、可插拔的**插件（不依赖任何特定壳的补丁，可被多个壳消费）。
-- `deepseek-harness-harmony/plugins/` —— 存放**本工程专用**的插件；该目录下的插件在**编译期打入包内**，在**运行期全部默认加载**。
+- `dsh-desktop-hos/plugins/` —— 存放**本工程专用**的插件；该目录下的插件在**编译期打入包内**，在**运行期全部默认加载**。
 
 本插件是**补丁式插件**：四个工具都建立在 `ctx.fs` seam 的变更原语之上，其中三个原语由**本工程自己的上游 dsh 补丁**提供 —— `ctx.fs.remove`（[`dsh-fs-remove-primitive.patch`](../../patches/dsh-v0.1.5-rc.2/dsh-fs-remove-primitive.patch)）、`ctx.fs.writeBytes`（[`dsh-fs-write-bytes.patch`](../../patches/dsh-v0.1.5-rc.2/dsh-fs-write-bytes.patch)）、`ctx.fs.chmod`（[`dsh-fs-chmod-primitive.patch`](../../patches/dsh-v0.1.5-rc.2/dsh-fs-chmod-primitive.patch)）。离开本工程的补丁集，插件无法工作。这正是它必须留在本工程 `plugins/`、而不能放进父工程通用目录 `dsh-plugins/` 的原因。
 
@@ -27,7 +27,7 @@
 
 **包含**：
 
-- 插件本体：`deepseek-harness-harmony/plugins/harmony-plugin-fs-mutate/` 下的四个工具注册与实现（`lib/`）、`package.json`、中英两份 README、两个纯 Node 单测（`tests/`）。
+- 插件本体：`dsh-desktop-hos/plugins/harmony-plugin-fs-mutate/` 下的四个工具注册与实现（`lib/`）、`package.json`、中英两份 README、两个纯 Node 单测（`tests/`）。
 - 构建期收集逻辑：`collectPlugins()` 从**本工程** `plugins/` 读取，按 `harmony-plugin-*` 通配发现，物化到 `dsh-dist/node_modules/<包名>/`。
 - 运行期解析逻辑：`ensureDshPluginsProfileLink()` 把 `dsh-dist/node_modules/harmony-plugin-*` 复制到 `$DSH_HOME/profiles/node_modules/`，并清理**同族陈旧目录**（见 FR-4）。
 - 两个插件目录各一份 `README.md`，说明用途边界与新增插件的步骤。
@@ -39,7 +39,7 @@
 - **插件对外契约之外的任何行为变更**。四个工具的名称、参数 schema、结果文案、`ctx.fs` 抛出的 `FsError` 文案、沙箱升级行为、`maxTransferBytes` 配置语义与默认值，一律以其契约为准（见 FR-5 / FR-6）。
 - `patches/dsh-v0.1.5-rc.2/` 下任何补丁的增删改。三个原语补丁是 dsh 上游补丁，位置本就正确。
 - 删除父工程 `dsh-plugins/` 目录本身。该目录保留为**通用**插件的归位点（当前仅含 `README.md`）。
-- 桌面工程 `deepseek-harness-desktop`。它不参与本工程的构建与打包。
+- 桌面工程 `dsh-desktop`。它不参与本工程的构建与打包。
 - Git 分支操作。
 
 ## 2. 用户故事
@@ -56,7 +56,7 @@
 
 | 项 | 取值 |
 |---|---|
-| 插件目录 | `deepseek-harness-harmony/plugins/harmony-plugin-fs-mutate/` |
+| 插件目录 | `dsh-desktop-hos/plugins/harmony-plugin-fs-mutate/` |
 | npm `name` | `harmony-plugin-fs-mutate` |
 | 插件 `name` 导出 | `harmony-plugin-fs-mutate` |
 | agent preset 行 `name` | `harmony-plugin-fs-mutate` |
@@ -126,13 +126,13 @@ JSDoc `@module` 与错误文案前缀同样是名字令牌：留着会让抛错�
 
 ### FR-7 文档约定
 
-**FR-7.1** `deepseek-harness-harmony/plugins/README.md` 必须说明：本目录存放本工程**专用**插件、编译期打入、运行期默认全部加载、命名 `harmony-plugin-XXX`、目录名=包名，以及**新增一个插件的完整步骤**。
+**FR-7.1** `dsh-desktop-hos/plugins/README.md` 必须说明：本目录存放本工程**专用**插件、编译期打入、运行期默认全部加载、命名 `harmony-plugin-XXX`、目录名=包名，以及**新增一个插件的完整步骤**。
 **FR-7.2** `<父工程>/dsh-plugins/README.md` 必须说明：本目录存放**通用、可插拔**插件（不依赖任何特定壳的补丁）、命名 `dsh-plugin-XXX`、目录名=包名，并指向本工程 `plugins/` 作为"专用插件"的归位点。
 **FR-7.3** 本工程与父工程的 `README.md` / `README_zh.md` 中描述插件分工的章节，必须描述**两侧分工**（哪一侧放什么）。
 
 ## 4. 目录约定
 
-| 维度 | `<父工程>/dsh-plugins/` | `deepseek-harness-harmony/plugins/` |
+| 维度 | `<父工程>/dsh-plugins/` | `dsh-desktop-hos/plugins/` |
 |---|---|---|
 | 定位 | 通用、可插拔插件 | 本工程**专用**插件 |
 | 判定标准 | 不依赖任何特定壳的补丁/适配，可被多个壳消费 | 依赖本壳特有的补丁、profile 或运行期适配 |
@@ -145,7 +145,7 @@ JSDoc `@module` 与错误文案前缀同样是名字令牌：留着会让抛错�
 
 | 编号 | 验收标准 | 验证方式 |
 |---|---|---|
-| AC-1 | `deepseek-harness-harmony/plugins/harmony-plugin-fs-mutate/` 文件齐备：`package.json`、`README.md`、`README_zh.md`、`lib/{index,sandbox,transfer,permissions,delete,move,copy,chmod}.js`、`tests/{permissions,transfer}.test.mjs`（共 13 个文件） | `find` / 目录列举 |
+| AC-1 | `dsh-desktop-hos/plugins/harmony-plugin-fs-mutate/` 文件齐备：`package.json`、`README.md`、`README_zh.md`、`lib/{index,sandbox,transfer,permissions,delete,move,copy,chmod}.js`、`tests/{permissions,transfer}.test.mjs`（共 13 个文件） | `find` / 目录列举 |
 | AC-2 | 全工程 `grep -rn "plugin-fs-mutate"` 的每一处命中都必须是 `harmony-plugin-fs-mutate`（即不存在任何其它 `-plugin-fs-mutate` 包名令牌） | `grep -rn` |
 | AC-3 | 父工程 `dsh-plugins/` 仅剩 `README.md` | `ls` |
 | AC-4 | 两处 `HARMONY_ENSURED_PRESET_ROWS` 逐条一致（`id` / `name` / `requireRow`） | 双文件 `grep` 对照；构建期由 `assertPresetRowsMirrorMainJs()` 硬失败 |

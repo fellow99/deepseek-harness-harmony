@@ -4,7 +4,7 @@
  *
  * 用法：node scripts/build-dsh.mjs
  * 前置：dsh 与本工程同级目录（../deepseek-harness），git 仓库。
- * 说明：本脚本只依赖同级 ../deepseek-harness 与 ../dsh-market，与 deepseek-harness-desktop 无关。
+ * 说明：本脚本只依赖同级 ../deepseek-harness 与 ../dsh-market，与 dsh-desktop 无关。
  */
 import { execSync } from 'node:child_process';
 import { existsSync, readdirSync, rmSync } from 'node:fs';

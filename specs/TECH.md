@@ -1,6 +1,6 @@
 # TECH.md — 技术选型
 
-> deepseek-harness-harmony 技术栈选型、版本与依赖说明。
+> dsh-desktop-hos 技术栈选型、版本与依赖说明。
 > Last Updated: 2026-09-04
 
 ## 1. 技术栈总览
@@ -14,7 +14,7 @@
 | 兼容 SDK | compatibleSdkVersion | 5.0.5(17) | build-profile.json5 |
 | 宿主 | deepseek-harness（dsh） | dsh-v0.1.2-rc.1（patch 基线） | agent harness（「一切皆插件」，Cordis 驱动） |
 | 插件市场 | dsh-market | 1.26.0 | 可视化插件市场（物化为 dshmarket bundle） |
-| 架构参考 | deepseek-harness-desktop | — | 仅架构设计参考，不参与构建 |
+| 架构参考 | dsh-desktop | — | 仅架构设计参考，不参与构建 |
 | 包管理 | pnpm | 11 | dsh / dsh-market 依赖安装与构建 |
 | 构建 | hvigor（DevEco Studio） | 4.0+ | 鸿蒙 HAP 构建 + 签名 |
 | 语言 | ArkTS / TypeScript / Node.js（CJS） | — | 桥接层 ArkTS；主进程 CommonJS |
@@ -77,7 +77,7 @@
 
 ## 6. 与 desktop 的技术差异
 
-| 维度 | deepseek-harness-desktop | 本工程（harmony） |
+| 维度 | dsh-desktop | 本工程（harmony） |
 |---|---|---|
 | 运行时 | 官方 Electron（npm 依赖） | Electron-on-鸿蒙（构建期 copy SO + ArkTS 桥接） |
 | UI 加载 | `loadURL(localhost)` | `loadURL(局域网 IP)` + Host 头改写为 loopback |

@@ -1,7 +1,7 @@
 /**
  * DSH Desktop（HarmonyOS 版） — Electron 主进程（Electron-on-鸿蒙 运行时）
  *
- * 与 deepseek-harness-desktop 的 main 进程（host.ts + index.ts）等价，但为 CommonJS 入口
+ * 与 dsh-desktop 的 main 进程（host.ts + index.ts）等价，但为 CommonJS 入口
  * （鸿蒙 Electron 示例用 require('electron')），dsh 的 ESM 产物经动态 import 加载。
  *
  * 部署形态：dsh 部署产物（dsh-dist/）先压缩为 dsh-dist.tar.gz 打入 resfile（避免 HAP 内

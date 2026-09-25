@@ -10,7 +10,7 @@
 ### 1.1 运行时环境
 
 - **执行环境**：Windows 宿主机 Node（`node scripts/*.mjs` 直接调用）。本工程**无 `package.json`、无 `npm run`**，脚本为 ES Module（`.mjs`），仅依赖 Node 内置模块。
-- **工程根定位**：三个脚本均用 `resolve(fileURLToPath(new URL('..', import.meta.url)))` 解析出 `projectRoot`（本工程根目录），与 `deepseek-harness-desktop` 无关（§18.6）。
+- **工程根定位**：三个脚本均用 `resolve(fileURLToPath(new URL('..', import.meta.url)))` 解析出 `projectRoot`（本工程根目录），与 `dsh-desktop` 无关（§18.6）。
 - **前置环境变量**：`DEVECO_SDK_HOME`（用于定位 `libc++_shared.so`）、`CI`/`npm_config_confirm_modules_purge`/`COREPACK_ENABLE_DOWNLOAD_PROMPT`（脚本内自动设置，保证 pnpm/tsdown 无 TTY 时不中止）。
 - **外部 CLI**：`git`（apply patch）、`pnpm@11`（install/build/deploy）、`npm`（build dsh-market）、`tar`（解包 better-sqlite3 归档）。
 

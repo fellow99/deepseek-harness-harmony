@@ -113,7 +113,7 @@
 
 ## 5. 证据：已执行的命令与逐字输出
 
-以下命令均在 `D:\deepseek-harness-workspace\deepseek-harness-harmony` 下执行。
+以下命令均在 `D:\deepseek-harness-workspace\dsh-desktop-hos` 下执行。
 
 ### 5.1 `node --check`（4 个新文件）
 

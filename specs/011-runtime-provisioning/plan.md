@@ -26,7 +26,7 @@
 | pnpm 的 JavaScript | 官方 npm registry | 路径 B 的进程内 pnpm |
 | 二进制证书 | 华为在线工单（**用户所有**） | 路径 A 的 ELF 签名（硬前置） |
 | `ohos.permission.ALLOW_EXTERNAL_NATIVE_CODE`（ACL） | AGC（**用户所有**） | 仅 `executableBinaryPaths` 备选形态需要 |
-| desktop 参考实现 | `deepseek-harness-desktop/src/main/runtime.ts`、`scripts/fetch-runtime.mjs` | shim / PATH / 完整性校验的同构解 |
+| desktop 参考实现 | `dsh-desktop/src/main/runtime.ts`、`scripts/fetch-runtime.mjs` | shim / PATH / 完整性校验的同构解 |
 
 > 本模块**不**新增 npm 运行时依赖到本工程 `package.json`：路径 B 的 pnpm JS 由构建脚本获取并物化进 `dsh-dist`，不进入宿主依赖树。
 
@@ -78,7 +78,7 @@
 3. **必须早于 `runProfile()`**（`:496`）：`dshmarket` 的 `spawnEnv()` 在每次 spawn 时读 `process.env.PATH`（`dsh-market/src/dsh-cli.ts:235-250`），而 `provisionPnpm()` / `probePnpm()` 都发生在 Host 起来**之后**的 UI 交互中——因此只要在 `runProfile` 前把 `PATH` / `PNPM_HOME` 写好即可；
 4. **与 `installExtraWritableRoots()` 无耦合**：两者都改 `process.env`，但语义正交（前者改运行时搜索路径，后者改沙箱可写白名单），顺序不影响正确性——放在其后便于"先运行时、后沙箱策略"的阅读顺序（也可放在其后，见 §3.3）。
 
-这与 desktop 的做法一致：`setupMarketRuntime()` 在 `startHost()` 之前调用（`[参考]` `deepseek-harness-desktop/src/main/runtime.ts:130`），本工程把它落在 `startHost()` 函数体内、`runProfile` 之前。
+这与 desktop 的做法一致：`setupMarketRuntime()` 在 `startHost()` 之前调用（`[参考]` `dsh-desktop/src/main/runtime.ts:130`），本工程把它落在 `startHost()` 函数体内、`runProfile` 之前。
 
 ### 3.3 精确接线（伪代码，`[设计]`）
 

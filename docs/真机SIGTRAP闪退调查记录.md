@@ -2,7 +2,7 @@
 
 > 调查时间：2026-09-12
 > 设备：`192.168.0.130:41861`（HAD-W32，API 24）
-> 包名：`org.fellow99.DeepseekHarnessHarmony`
+> 包名：`org.fellow99.dsh.DshDesktop`
 > 状态：已定位到「我们本机编译产物崩溃 / 他机编译产物正常」，根因待最终确认
 
 ---
